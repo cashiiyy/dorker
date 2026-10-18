@@ -130,7 +130,11 @@ export function App() {
             <DiscordSettingsView />
           )}
           {currentTab === 'about' && (
-            <AboutView />
+            <AboutView
+              settings={settings}
+              health={health}
+              onRefresh={loadStatus}
+            />
           )}
         </main>
       </div>
