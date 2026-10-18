@@ -1,116 +1,87 @@
-# SearchLens AI — Google Search Operator Workbench
+# 🎯 DORKER — OSINT & Search Intelligence Platform
 
-SearchLens AI is an advanced, AI-assisted research dashboard that converts natural-language research requests into verified Google search queries (`site:`, `filetype:`, `intitle:`, `inurl:`, `intext:`, `"exact quotes"`, `OR`, `-exclusion`). It performs client- and server-side validation, executes search retrieval through a configurable SERP provider adapter (with built-in zero-cost Mock Mode), safely previews public research documents behind an SSRF protection layer, and persists research sessions locally in SQLite.
-
----
-
-## 🌟 Key Features
-
-1. **Local-First AI Query Synthesis**
-   - Integrates with local **LM Studio** running the uncensored **Qwen 3.5 9B** model (`qwen3.5-9b-uncensored-hauhaucs-aggressive`).
-   - Deep model spec inspection via `lms` CLI: model identifier, parameter count (9B), context length (68,225 tokens), size (6.55 GB), and architecture (`qwen35`).
-   - Zero telemetry: research objectives never leave your machine.
-   - Robust heuristic query fallback: workbench remains 100% operational even when LM Studio is offline or under heavy load.
-
-2. **8 Specialized Research Presets**
-   - **Public Documentation Discovery**: API specs, developer portals, architecture manuals.
-   - **Security Advisories & Vulnerability Research**: CVE disclosures, vendor bulletins, security patches.
-   - **Public Code & Repository Research**: GitHub & GitLab trees, blobs, release archives.
-   - **Public Datasets & Research Papers**: arXiv, HuggingFace, Kaggle datasets, OpenData repositories.
-   - **Authorized Domain Exposure Audits**: Scope-constrained enumeration of accidentally indexed subdomains or test routes.
-   - **Technical PDF Extraction**: Whitepapers, schematics, technical specifications.
-   - **Website Indexing Diagnostics**: Negative filters (`-inurl:www`), index hygiene, directory structures.
-   - **Academic OSINT**: Lawfully accessible open-source intelligence across educational and governmental resources.
-
-3. **Strict Security Guardrails & Prohibited Content Prevention**
-   - Blocks illicit credential dumps, password leaks (`ext:sql`, `ext:env`, `id_rsa`), and private PII harvesting.
-   - Automatic benign redirection: transforms unsafe harvesting objectives into lawful security advisories, synthetic datasets, or defensive OWASP guides.
-   - Mandatory authorization confirmation gate for domain exposure audits.
-
-4. **Configurable SERP Provider with Mock Mode**
-   - Provider adapter decoupling backend from proprietary APIs.
-   - Supports SerpApi with server-side API key management.
-   - Built-in realistic Mock Mode when `SERPAPI_API_KEY` is omitted, eliminating test API credit consumption.
-   - Searches only fire upon explicit user interaction.
-
-5. **SSRF-Safe Public Document Preview Sandbox**
-   - Strictly validates target URLs against loopback (127.0.0.1, ::1), RFC1918 private subnets (10.x, 172.16.x, 192.168.x), and cloud metadata (169.254.169.254).
-   - Re-resolves and validates DNS on every redirect hop (max 3 redirects).
-   - Sanitizes remote HTML: completely strips `<script>`, `<iframe>`, `<object>`, `<embed>`, `<form>`, inline event handlers, and active macros.
-
-6. **Persistence & Markdown Export**
-   - SQLite persistence (`searchlens.db`) stores sessions, queries, results, and analyst notes.
-   - One-click export to structured Markdown reports.
+> **Think. Dork. Discover.**  
+> Turning natural language objectives into razor-sharp Google search operators with private local AI, safety guardrails, live SERP verification, and one-click Discord intelligence dispatch.
 
 ---
 
-## 🏗️ Architecture
+## 💡 What is DORKER?
 
-```
-SearchLens AI
-├── backend/
-│   ├── app/
-│   │   ├── config.py              # Pydantic settings & env management
-│   │   ├── main.py                # FastAPI app & static file mounting
-│   │   ├── models/schemas.py      # Pydantic request/response schemas
-│   │   ├── services/
-│   │   │   ├── lm_studio.py       # LM Studio OpenAI-compatible client & CLI inspector
-│   │   │   ├── query_validator.py # Operator syntax, scope, and safety guardrails
-│   │   │   ├── query_generator.py # Qwen prompt orchestrator & heuristic fallback
-│   │   │   ├── serp_adapter.py    # SERP provider adapter (SerpApi & Mock)
-│   │   │   ├── preview_service.py # SSRF protection & BeautifulSoup sanitizer
-│   │   │   └── research_session.py# SQLite research persistence & export
-│   │   └── api/routes.py          # REST endpoints
-│   └── tests/                     # 20 automated pytest test cases
-├── frontend/                      # React 19 + TypeScript + Vite + Tailwind CSS v4
-│   ├── src/
-│   │   ├── components/            # Sidebar, TopBar, Workbench, QueryCard, Results, Preview
-│   │   ├── api.ts                 # Typed fetch client
-│   │   └── types.ts               # Shared TypeScript interfaces
-└── searchlens.db                  # Local SQLite database
-```
+Most people only scratch the surface of Google by typing ordinary keywords. Deep within Google’s indexing engine lies an advanced syntax called **Google Dorking** (`site:`, `filetype:`, `intitle:`, `inurl:`, `intext:`, `-exclusions`, boolean `OR`). When crafted correctly, these queries can locate exact technical documents, discover hidden endpoints, audit domain hygiene, uncover security advisories, and isolate research datasets in seconds.
+
+**DORKER** is an AI workbench built for researchers, security analysts, and developers. You simply describe what you want to find in plain English, and DORKER:
+1. **Understands your intent** using a private, local artificial intelligence model (no queries ever leave your computer).
+2. **Translates it into professional search operators** adhering to strict Google syntax rules.
+3. **Validates every command** against safety guardrails to ensure lawful, ethical research.
+4. **Executes the search** using a live Google search engine (with built-in Mock Mode for zero-cost testing).
+5. **Previews the discovered sources** safely in an isolated reader sandbox.
+6. **Dispatches the intelligence report directly to your Discord channel** with a single click.
 
 ---
 
-## 🚀 Setup & Startup Instructions
+## ⚡ The 5-Step Workflow
+
+DORKER tracks your mission every step of the way with an interactive **Workflow Checkpoints** panel in the left sidebar:
+
+| Step | Milestone | Description |
+|:---:|:---|:---|
+| **1** | **Objective Defined** | Describe your target goal in natural English (e.g., *"Find API documentation and swagger endpoints for payment gateways"*). |
+| **2** | **Dorks Synthesized** | The local AI formulates 4–6 specialized Google search operator queries tailored to your objective. |
+| **3** | **Syntax Validated** | DORKER verifies quotation pairing, operator colons, target domain scopes, and checks against harmful patterns. |
+| **4** | **SERP Executed** | Run any query against live Google results with real-time snippets, publication dates, and source links. |
+| **5** | **Dispatched to Discord** | Review findings and transmit formatted embeds directly to your team’s Discord channel via webhook. |
+
+---
+
+## 🛡️ Key Highlights
+
+- **🔒 100% Local-First Privacy**: Powered by local AI via LM Studio (Qwen 3.5 9B). Your queries, company names, and sensitive research objectives never leave your machine.
+- **🎯 8 Research Presets**:
+  - 📖 **Public Documentation**: Pinpoint developer portals, API schemas, and architecture whitepapers.
+  - 🛡️ **Security Advisories**: Discover official CVE records, vendor security bulletins, and patch notes.
+  - 💾 **Code & Repositories**: Scour open-source repositories on GitHub and GitLab for blueprinted implementations.
+  - 📊 **Datasets & Papers**: Isolate academic research papers on arXiv, Kaggle, and HuggingFace.
+  - 📡 **Domain Audit**: Authorized exposure analysis to verify what paths search engines have indexed.
+  - 📑 **Technical PDFs**: Extract whitepapers, user manuals, and technical schematics.
+  - 🖥️ **Indexing Diagnostics**: Audit subdomains and filter out standard landing pages (`-inurl:www`).
+  - 🧭 **Academic OSINT**: Explore legitimate public institutional and scientific archives.
+- **⚡ One-Click Discord Delivery**: Instant formatted webhook alerts with neat title cards, direct Google links, and source summaries.
+- **🛡️ Built-in Ethical Guardrails**: Automatically blocks prohibited harvesting (passwords, private keys, database dumps) and redirects to lawful defensive advisories.
+- **🔄 Live SERP & Free Mock Mode**: Supports live Google search via SerpApi, with a zero-cost realistic Mock Mode toggle in the top bar.
+- **👓 Safe Document Preview**: Read public web pages safely in an SSRF-protected, script-sanitized modal without opening external browser tabs.
+
+---
+
+## 🚀 Quick Start Guide
 
 ### Prerequisites
 - Python 3.10+
-- Node.js 18+ & npm
-- LM Studio (optional for local Qwen inference; heuristic fallback works without it)
+- Node.js 18+ (with npm)
+- *(Optional)* [LM Studio](https://lmstudio.ai/) running locally for AI query synthesis (DORKER includes a built-in neural rule engine fallback if LM Studio is offline).
 
-### 1. Backend Setup
-
+### 1. Clone & Configure
 ```bash
-# In project root:
-python -m pip install fastapi uvicorn pydantic pydantic-settings httpx beautifulsoup4 pytest
+git clone https://github.com/cashiiyy/dorker.git
+cd dorker
 ```
 
-### 2. Configure Environment (`.env`)
-
-Copy `.env.example` to `.env`:
-```bash
-cp .env.example .env
-```
-
-Key configuration options:
+Create your `.env` file in the project root:
 ```ini
+# Local AI Settings
 LM_STUDIO_BASE_URL=http://127.0.0.1:1234/v1
 LM_STUDIO_MODEL=qwen3.5-9b-uncensored-hauhaucs-aggressive
-LM_STUDIO_TIMEOUT_SECONDS=15.0
 
-# SERP Settings (Leave empty for zero-cost Mock Mode)
+# Google Search Settings (Leave blank to use free Mock Mode)
 SERP_PROVIDER=serpapi
-SERPAPI_API_KEY=
+SERPAPI_API_KEY=your_serpapi_key_here
 SERP_RESULT_LIMIT=10
 
-DATABASE_URL=sqlite:///./searchlens.db
-APP_ENV=development
-LOG_LEVEL=INFO
+# Discord Webhook Delivery (Optional)
+DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/YOUR_ID/YOUR_TOKEN
+DISCORD_ENABLED=true
 ```
 
-### 3. Frontend Build
-
+### 2. Build Frontend
 ```bash
 cd frontend
 npm install
@@ -118,36 +89,30 @@ npm run build
 cd ..
 ```
 
-### 4. Run Application
-
+### 3. Launch DORKER
 ```bash
 python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
 ```
 Open your browser to: **`http://127.0.0.1:8000`**
 
----
-
-## 🤖 LM Studio Model Loading
-
-1. Launch **LM Studio**.
-2. Download or select model: `qwen3.5-9b-uncensored-hauhaucs-aggressive` (or set `LM_STUDIO_MODEL` in `.env`).
-3. Under the **Developer** tab, start the local server on port **1234**.
-4. Verify with CLI:
-   ```bash
-   lms ps
-   ```
+*(For active frontend development with Hot Module Replacement, run `npm run dev` inside `frontend/` on port `5173`).*
 
 ---
 
-## 🧪 Automated Test Suite
+## 💬 Discord Webhook Integration
 
-Run all 20 backend unit and integration tests:
-```bash
-python -m pytest backend/tests
-```
+DORKER delivers professional, color-coded intelligence reports straight to your server:
+1. Copy any Discord channel's Webhook URL (*Channel Settings → Integrations → Webhooks*).
+2. Paste it in DORKER's **Discord Sync** settings tab (or put it in `.env`).
+3. Click **"Test Webhook"** to verify connection.
+4. From the Workbench, click **"Send Dorks to Discord"** or select search results and hit **"Send to Discord"**.
 
-### Test Coverage Highlights:
-- `backend/tests/test_validation.py`: Google search operator extraction, unbalanced quote handling, scope boundary enforcement, prohibited credential detection, benign redirection.
-- `backend/tests/test_preview_ssrf.py`: SSRF prevention for loopback, private RFC1918 subnets, cloud metadata endpoints, and HTML script sanitization.
-- `backend/tests/test_serp_adapter.py`: Mock provider behavior, result limits, and response normalization.
-- `backend/tests/test_api_endpoints.py`: End-to-end FastAPI endpoint testing including `/api/health`, `/api/models`, `/api/queries/validate`, `/api/search`, and `/api/research` session lifecycle.
+---
+
+## 📜 Ethical Use Notice
+
+DORKER is designed for lawful, defensive security audits, academic research, and OSINT investigation. Always obtain explicit authorization before conducting exposure audits against third-party domains.
+
+---
+
+*Think. Dork. Discover.*

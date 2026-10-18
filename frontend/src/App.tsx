@@ -8,7 +8,7 @@ import { SecurityView } from './components/SecurityView';
 import { AboutView } from './components/AboutView';
 import { DiscordSettingsView } from './components/DiscordSettingsView';
 import { PreviewModal } from './components/PreviewModal';
-import { SystemHealth, SettingsStatus, PreviewResponse, ResearchSession } from './types';
+import { SystemHealth, SettingsStatus, PreviewResponse, ResearchSession, WorkflowCheckpoints } from './types';
 import { fetchHealth, fetchSettings, fetchPreview, listSessions, getDiscordStatus } from './api';
 
 export function App() {
@@ -18,6 +18,20 @@ export function App() {
   const [loadingHealth, setLoadingHealth] = useState(false);
   const [savedSessionsCount, setSavedSessionsCount] = useState(0);
   const [discordActive, setDiscordActive] = useState(false);
+
+  // Workflow Checkpoints for left sidebar
+  const [checkpoints, setCheckpoints] = useState<WorkflowCheckpoints>({
+    objectiveDefined: false,
+    queriesGenerated: false,
+    queriesValidated: false,
+    searchExecuted: false,
+    resultsInspected: false,
+    sentToDiscord: false,
+  });
+
+  const handleUpdateCheckpoints = (updates: Partial<WorkflowCheckpoints>) => {
+    setCheckpoints((prev) => ({ ...prev, ...updates }));
+  };
 
   const [previewData, setPreviewData] = useState<PreviewResponse | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -87,6 +101,7 @@ export function App() {
         }}
         savedSessionsCount={savedSessionsCount}
         discordActive={discordActive}
+        checkpoints={checkpoints}
       />
 
       {/* Main */}
@@ -99,6 +114,7 @@ export function App() {
               onPreviewUrl={handlePreviewUrl}
               onSessionSaved={loadStatus}
               initialSession={activeSession}
+              onCheckpointUpdate={handleUpdateCheckpoints}
             />
           )}
           {currentTab === 'history' && (

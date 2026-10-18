@@ -3,13 +3,21 @@ import {
   Crosshair, Search, Globe, FileCode, ShieldAlert, Database,
   FileText, Copy, Check, Bookmark, Layers, AlertCircle, X, Plus,
   ChevronRight, Zap, Terminal, Send, CheckCircle, RefreshCw,
-  Target, Code2, BookOpen, Brain
+  Target, Code2, BookOpen, Brain, Binary, Cpu, Compass, FileCheck,
+  Radar, Sparkles, Server, Shield
 } from 'lucide-react';
 import {
   ResearchCategory, GeneratedQuery, GenerateQueriesResponse,
   SearchResultItem, SearchResponse, ResearchSession
 } from '../types';
-import { generateQueries, executeSearch, saveSession, getDiscordStatus, sendDiscordReport } from '../api';
+import {
+  generateQueries,
+  executeSearch,
+  saveSession,
+  getDiscordStatus,
+  sendDiscordReport,
+  sendDorksToDiscord
+} from '../api';
 import { QueryCard } from './QueryCard';
 import { ResultsWorkspace } from './ResultsWorkspace';
 
@@ -17,17 +25,24 @@ interface QueryWorkbenchProps {
   onPreviewUrl: (url: string) => void;
   onSessionSaved?: () => void;
   initialSession?: ResearchSession | null;
+  onCheckpointUpdate?: (updates: {
+    objectiveDefined?: boolean;
+    queriesGenerated?: boolean;
+    queriesValidated?: boolean;
+    searchExecuted?: boolean;
+    sentToDiscord?: boolean;
+  }) => void;
 }
 
 const CATEGORIES: { id: ResearchCategory; label: string; icon: any; desc: string; accent: string }[] = [
-  { id: 'public_documentation',  label: 'Public Docs',       icon: FileText,   desc: 'API specs, whitepapers',         accent: '#63b3ed' },
+  { id: 'public_documentation',  label: 'Public Docs',       icon: BookOpen,    desc: 'API specs, whitepapers',         accent: '#38bdf8' },
   { id: 'security_advisories',   label: 'CVE / Advisories',  icon: ShieldAlert, desc: 'Vuln bulletins, patches',        accent: '#f59e0b' },
-  { id: 'code_repositories',     label: 'Code / Repos',      icon: FileCode,   desc: 'GitHub, GitLab blobs',            accent: '#10b981' },
-  { id: 'datasets_papers',       label: 'Datasets / Papers', icon: Database,   desc: 'arXiv, HuggingFace, Kaggle',      accent: '#a78bfa' },
-  { id: 'domain_exposure_audit', label: 'Domain Audit',      icon: Globe,      desc: 'Exposed paths, staging',          accent: '#f87171' },
-  { id: 'pdf_technical_docs',    label: 'PDF Extraction',    icon: BookOpen,   desc: 'Manuals, standards',              accent: '#fb923c' },
-  { id: 'indexing_diagnostics',  label: 'Index Diagnostics', icon: Layers,     desc: 'Subdomain hygiene',               accent: '#34d399' },
-  { id: 'academic_osint',        label: 'Academic OSINT',    icon: Search,     desc: 'Gov, edu, open research',         accent: '#818cf8' },
+  { id: 'code_repositories',     label: 'Code / Repos',      icon: Binary,      desc: 'GitHub, GitLab blobs',            accent: '#10b981' },
+  { id: 'datasets_papers',       label: 'Datasets / Papers', icon: Database,    desc: 'arXiv, HuggingFace, Kaggle',      accent: '#a78bfa' },
+  { id: 'domain_exposure_audit', label: 'Domain Audit',      icon: Radar,       desc: 'Exposed paths, staging',          accent: '#f87171' },
+  { id: 'pdf_technical_docs',    label: 'PDF Extraction',    icon: FileCheck,   desc: 'Manuals, standards',              accent: '#fb923c' },
+  { id: 'indexing_diagnostics',  label: 'Index Diagnostics', icon: Server,      desc: 'Subdomain hygiene',               accent: '#34d399' },
+  { id: 'academic_osint',        label: 'Academic OSINT',    icon: Compass,     desc: 'Gov, edu, open research',         accent: '#818cf8' },
 ];
 
 const FILE_TYPES = ['pdf', 'doc', 'docx', 'xls', 'csv', 'json', 'xml', 'txt', 'pptx', 'sql'];
@@ -37,11 +52,18 @@ export const QueryWorkbench: React.FC<QueryWorkbenchProps> = ({
   onPreviewUrl,
   onSessionSaved,
   initialSession,
+  onCheckpointUpdate,
 }) => {
   const [objective, setObjective] = useState(initialSession?.objective || '');
   const [category, setCategory] = useState<ResearchCategory>(
     (initialSession?.category as ResearchCategory) || 'public_documentation'
   );
+
+  useEffect(() => {
+    if (onCheckpointUpdate) {
+      onCheckpointUpdate({ objectiveDefined: objective.trim().length > 3 });
+    }
+  }, [objective, onCheckpointUpdate]);
   const [targetDomains, setTargetDomains] = useState<string[]>([]);
   const [domainInput, setDomainInput] = useState('');
   const [keywords, setKeywords] = useState<string[]>([]);
@@ -77,6 +99,9 @@ export const QueryWorkbench: React.FC<QueryWorkbenchProps> = ({
 
   // Discord
   const [discordConfigured, setDiscordConfigured] = useState(false);
+  const [dorkDiscordSending, setDorkDiscordSending] = useState(false);
+  const [dorkDiscordSuccess, setDorkDiscordSuccess] = useState<string | null>(null);
+  const [dorkDiscordError, setDorkDiscordError] = useState<string | null>(null);
 
   useEffect(() => {
     getDiscordStatus().then((s) => setDiscordConfigured(s.configured && s.enabled)).catch(() => {});
@@ -117,6 +142,12 @@ export const QueryWorkbench: React.FC<QueryWorkbenchProps> = ({
         authorized_domain_confirmed: authorizedConfirmed,
       });
       setGenResponse(res);
+      if (onCheckpointUpdate) {
+        onCheckpointUpdate({
+          queriesGenerated: true,
+          queriesValidated: res.queries.length > 0,
+        });
+      }
     } catch (e: any) {
       setErrorMsg(e.message || 'Generation failed. Is LM Studio running?');
     } finally { setGenerating(false); }
@@ -127,6 +158,9 @@ export const QueryWorkbench: React.FC<QueryWorkbenchProps> = ({
       setActiveQueryId(queryId); setSearching(true); setSearchResponse(null);
       const res = await executeSearch({ query, num_results: 10 });
       setSearchResponse(res);
+      if (onCheckpointUpdate) {
+        onCheckpointUpdate({ searchExecuted: true });
+      }
     } catch (e: any) {
       setSearchResponse({ query, total_results: 0, provider: 'error', is_mock: false, results: [], error: e.message });
     } finally { setSearching(false); }
@@ -150,6 +184,30 @@ export const QueryWorkbench: React.FC<QueryWorkbenchProps> = ({
     } catch (e: any) {
       alert(`Save failed: ${e.message}`);
     } finally { setSavingSession(false); }
+  };
+
+  const handleSendDorksToDiscord = async () => {
+    if (!genResponse) return;
+    try {
+      setDorkDiscordSending(true);
+      setDorkDiscordError(null);
+      setDorkDiscordSuccess(null);
+      const res = await sendDorksToDiscord({
+        title: genResponse.research_title,
+        objective: genResponse.objective_summary,
+        queries: genResponse.queries,
+        category: category,
+      });
+      setDorkDiscordSuccess(`Delivered ${res.messages_sent} dispatch to Discord at ${new Date(res.delivery_timestamp).toLocaleTimeString()}`);
+      if (onCheckpointUpdate) {
+        onCheckpointUpdate({ sentToDiscord: true });
+      }
+      setTimeout(() => setDorkDiscordSuccess(null), 6000);
+    } catch (err: any) {
+      setDorkDiscordError(err.message || 'Failed to dispatch dorks to Discord');
+    } finally {
+      setDorkDiscordSending(false);
+    }
   };
 
   const catObj = CATEGORIES.find(c => c.id === category);
@@ -501,7 +559,7 @@ export const QueryWorkbench: React.FC<QueryWorkbenchProps> = ({
 
             {/* Session actions */}
             {genResponse && (
-              <div className="flex items-center gap-2 mt-4 pt-3" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+              <div className="flex flex-wrap items-center gap-2 mt-4 pt-3" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
                 <button
                   onClick={handleSaveSession}
                   disabled={savingSession}
@@ -515,11 +573,49 @@ export const QueryWorkbench: React.FC<QueryWorkbenchProps> = ({
                   {savingSession ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Bookmark className="w-3.5 h-3.5" />}
                   {sessionSavedMsg ? 'Saved!' : savingSession ? 'Saving…' : 'Save Session'}
                 </button>
+
+                {discordConfigured && (
+                  <button
+                    onClick={handleSendDorksToDiscord}
+                    disabled={dorkDiscordSending}
+                    className="glow-btn flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold"
+                    style={{
+                      background: 'rgba(99,102,241,0.18)',
+                      border: '1px solid rgba(99,102,241,0.35)',
+                      color: '#c7d2fe',
+                    }}
+                    title="Send synthesized dork query commands to Discord webhook"
+                  >
+                    {dorkDiscordSending ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" style={{ color: '#818cf8' }} />
+                    ) : (
+                      <Send className="w-3.5 h-3.5" style={{ color: '#818cf8' }} />
+                    )}
+                    {dorkDiscordSending ? 'Sending to Discord…' : 'Send Dorks to Discord'}
+                  </button>
+                )}
+
                 {savedSessionId && (
-                  <span className="text-[10px] font-mono" style={{ color: 'rgba(100,116,139,0.6)' }}>
+                  <span className="text-[10px] font-mono ml-auto" style={{ color: 'rgba(100,116,139,0.6)' }}>
                     ID: {savedSessionId.slice(0, 8)}
                   </span>
                 )}
+              </div>
+            )}
+
+            {/* Dork discord feedback */}
+            {dorkDiscordSuccess && (
+              <div className="flex items-center gap-2 mt-2 px-3 py-1.5 rounded-lg text-xs font-mono"
+                style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.25)', color: '#34d399' }}>
+                <CheckCircle className="w-3.5 h-3.5 shrink-0" />
+                <span>{dorkDiscordSuccess}</span>
+              </div>
+            )}
+            {dorkDiscordError && (
+              <div className="flex items-center gap-2 mt-2 px-3 py-1.5 rounded-lg text-xs font-mono"
+                style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', color: '#f87171' }}>
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                <span>{dorkDiscordError}</span>
               </div>
             )}
           </div>
@@ -560,6 +656,11 @@ export const QueryWorkbench: React.FC<QueryWorkbenchProps> = ({
             onClose={() => setSearchResponse(null)}
             sessionId={savedSessionId || undefined}
             discordConfigured={discordConfigured}
+            onDiscordSent={() => {
+              if (onCheckpointUpdate) {
+                onCheckpointUpdate({ sentToDiscord: true });
+              }
+            }}
           />
         </div>
       )}

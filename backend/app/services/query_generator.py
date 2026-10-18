@@ -357,25 +357,40 @@ class QueryGeneratorService:
         }
 
     def _parse_json(self, text: str) -> Optional[Dict[str, Any]]:
-        """Extract and parse JSON from model response text."""
+        """Extract and parse JSON from model response text, stripping reasoning tags and markdown."""
+        if not text:
+            return None
+
+        # Strip Qwen / DeepSeek <think>...</think> reasoning blocks
+        cleaned = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
+
         try:
-            return json.loads(text.strip())
+            return json.loads(cleaned)
         except Exception:
             pass
 
-        match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', text, flags=re.DOTALL)
+        # Try markdown fences
+        match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', cleaned, flags=re.DOTALL)
         if match:
             try:
                 return json.loads(match.group(1))
             except Exception:
                 pass
 
-        start = text.find("{")
-        end = text.rfind("}")
+        # Try greedy outermost braces
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
         if start != -1 and end != -1 and end > start:
+            candidate = cleaned[start:end+1]
             try:
-                return json.loads(text[start:end+1])
+                return json.loads(candidate)
             except Exception:
-                pass
+                # Remove trailing commas before closing braces/brackets
+                candidate_fixed = re.sub(r',\s*([\}\]])', r'\1', candidate)
+                try:
+                    return json.loads(candidate_fixed)
+                except Exception:
+                    pass
 
         return None
+

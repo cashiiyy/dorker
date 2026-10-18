@@ -158,3 +158,13 @@ export interface DiscordSendResponse {
   delivery_timestamp: string;
   error?: string;
 }
+
+export interface WorkflowCheckpoints {
+  objectiveDefined: boolean;
+  queriesGenerated: boolean;
+  queriesValidated: boolean;
+  searchExecuted: boolean;
+  resultsInspected: boolean;
+  sentToDiscord: boolean;
+}
+

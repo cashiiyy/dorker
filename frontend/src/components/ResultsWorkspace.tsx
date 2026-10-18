@@ -17,7 +17,7 @@ import {
   CheckCircle
 } from 'lucide-react';
 import { SearchResponse, SearchResultItem, DiscordSendResponse } from '../types';
-import { sendDiscordReport } from '../api';
+import { sendDiscordReport, sendDirectResultsToDiscord } from '../api';
 
 interface ResultsWorkspaceProps {
   searchResponse: SearchResponse | null;
@@ -27,6 +27,7 @@ interface ResultsWorkspaceProps {
   // Discord integration
   sessionId?: string;
   discordConfigured?: boolean;
+  onDiscordSent?: () => void;
 }
 
 export const ResultsWorkspace: React.FC<ResultsWorkspaceProps> = ({
@@ -36,6 +37,7 @@ export const ResultsWorkspace: React.FC<ResultsWorkspaceProps> = ({
   onClose,
   sessionId,
   discordConfigured,
+  onDiscordSent,
 }) => {
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
@@ -93,10 +95,6 @@ export const ResultsWorkspace: React.FC<ResultsWorkspaceProps> = ({
   };
 
   const handleSendToDiscord = async () => {
-    if (!sessionId) {
-      setSendError('Save the session first to enable Discord delivery.');
-      return;
-    }
     if (selectedIndices.size === 0) {
       setSendError('Select at least one result to send.');
       return;
@@ -105,12 +103,29 @@ export const ResultsWorkspace: React.FC<ResultsWorkspaceProps> = ({
       setSending(true);
       setSendResult(null);
       setSendError(null);
-      const res = await sendDiscordReport({
-        session_id: sessionId,
-        selected_result_indices: Array.from(selectedIndices).sort((a, b) => a - b),
-        query_executed: searchResponse.query,
-      });
+      let res: DiscordSendResponse;
+      if (sessionId) {
+        res = await sendDiscordReport({
+          session_id: sessionId,
+          selected_result_indices: Array.from(selectedIndices).sort((a, b) => a - b),
+          query_executed: searchResponse.query,
+        });
+      } else {
+        const selectedItems = Array.from(selectedIndices)
+          .sort((a, b) => a - b)
+          .map(i => searchResponse.results[i])
+          .filter(Boolean);
+        res = await sendDirectResultsToDiscord({
+          query: searchResponse.query,
+          results: selectedItems,
+          title: `DORKER Search: ${searchResponse.query.slice(0, 80)}`,
+          objective: `Search Results for ${searchResponse.query}`
+        });
+      }
       setSendResult(res);
+      if (onDiscordSent) {
+        onDiscordSent();
+      }
     } catch (e: any) {
       setSendError(e.message || 'Discord delivery failed.');
     } finally {
@@ -119,7 +134,7 @@ export const ResultsWorkspace: React.FC<ResultsWorkspaceProps> = ({
   };
 
   const allSelected = selectedIndices.size === searchResponse.results.length;
-  const showDiscordPanel = discordConfigured && sessionId;
+  const showDiscordPanel = !!discordConfigured;
 
   return (
     <section className="glass-panel rounded-2xl p-6 border border-white/10 space-y-5">
@@ -214,13 +229,6 @@ export const ResultsWorkspace: React.FC<ResultsWorkspaceProps> = ({
         </div>
       )}
 
-      {/* Discord no-session notice */}
-      {discordConfigured && !sessionId && searchResponse.results.length > 0 && (
-        <div className="px-3.5 py-2.5 rounded-xl bg-indigo-500/5 border border-indigo-500/15 text-[11px] text-indigo-300 flex items-center gap-2">
-          <MessageSquare className="w-3.5 h-3.5 shrink-0" />
-          Save this session first to enable Discord delivery.
-        </div>
-      )}
 
       {/* Discord send feedback */}
       {sendResult && (

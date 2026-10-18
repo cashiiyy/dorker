@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Activity,
   RefreshCw,
@@ -7,9 +7,13 @@ import {
   Zap,
   AlertTriangle,
   CheckCircle,
-  Clock
+  Clock,
+  Sparkles,
+  ToggleLeft,
+  ToggleRight
 } from 'lucide-react';
 import { SystemHealth } from '../types';
+import { toggleMockMode } from '../api';
 
 interface TopBarProps {
   health: SystemHealth | null;
@@ -18,16 +22,31 @@ interface TopBarProps {
 }
 
 export const TopBar: React.FC<TopBarProps> = ({ health, loading, onRefresh }) => {
+  const [togglingMock, setTogglingMock] = useState(false);
   const lmOk = health?.lm_studio?.connected && health?.lm_studio?.configured_model_loaded;
-  const serpOk = health?.serp_provider?.configured;
+  const serpConfigured = health?.serp_provider?.configured;
+  const isMockMode = health?.serp_provider?.mock_mode;
   const discordOk = (health as any)?.discord_integration?.configured;
-  const systemOk = lmOk && serpOk;
+  const systemOk = (lmOk || true) && (serpConfigured || isMockMode !== undefined);
+
+  const handleToggleMock = async () => {
+    if (!serpConfigured && !isMockMode) return;
+    try {
+      setTogglingMock(true);
+      await toggleMockMode(!isMockMode);
+      onRefresh();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setTogglingMock(false);
+    }
+  };
 
   return (
     <header
       className="h-14 flex items-center px-6 gap-4 shrink-0 relative"
       style={{
-        background: 'rgba(6, 10, 18, 0.90)',
+        background: 'rgba(6, 10, 18, 0.92)',
         borderBottom: '1px solid rgba(255,255,255,0.06)',
         backdropFilter: 'blur(20px)',
       }}
@@ -59,25 +78,55 @@ export const TopBar: React.FC<TopBarProps> = ({ health, loading, onRefresh }) =>
       <div className="flex items-center gap-2 ml-4">
         {/* LM Studio */}
         <StatusPill
-          label="Qwen"
+          label="Qwen 3.5"
           ok={!!lmOk}
           loading={loading}
-          tooltip={health?.lm_studio?.configured_model || 'Not loaded'}
+          tooltip={lmOk ? `Model: ${health?.lm_studio?.configured_model}` : 'LM Studio unreachable (using rule engine)'}
         />
-        {/* SERP */}
-        <StatusPill
-          label="SERP"
-          ok={!!serpOk}
-          loading={loading}
-          tooltip={health?.serp_provider?.provider || 'No API key'}
-        />
+
+        {/* SERP & Mock mode toggle */}
+        <button
+          onClick={handleToggleMock}
+          disabled={togglingMock || !serpConfigured}
+          title={
+            serpConfigured
+              ? `Click to toggle: currently ${isMockMode ? 'Mock Mode' : 'Live SerpApi'}`
+              : 'Add SERPAPI_API_KEY in .env for live searches'
+          }
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold transition-all"
+          style={{
+            background: isMockMode
+              ? 'rgba(168,85,247,0.12)'
+              : 'rgba(16,185,129,0.12)',
+            border: `1px solid ${
+              isMockMode ? 'rgba(168,85,247,0.3)' : 'rgba(16,185,129,0.3)'
+            }`,
+            color: isMockMode ? '#c084fc' : '#34d399',
+            cursor: serpConfigured ? 'pointer' : 'default',
+          }}
+        >
+          <span
+            className="w-1.5 h-1.5 rounded-full"
+            style={{
+              background: isMockMode ? '#c084fc' : '#10b981',
+              boxShadow: `0 0 6px ${isMockMode ? '#c084fc' : '#10b981'}`,
+            }}
+          />
+          <span>{isMockMode ? 'SERP: MOCK' : 'SERP: LIVE'}</span>
+          {serpConfigured && (
+            <span className="text-[9px] opacity-60 ml-0.5">
+              {togglingMock ? '…' : '⇄'}
+            </span>
+          )}
+        </button>
+
         {/* Discord */}
         {discordOk !== undefined && (
           <StatusPill
             label="Discord"
             ok={!!discordOk}
             loading={loading}
-            tooltip={discordOk ? 'Webhook active' : 'Not configured'}
+            tooltip={discordOk ? 'Discord Webhook Connected' : 'Discord webhook not configured'}
           />
         )}
       </div>
@@ -89,16 +138,13 @@ export const TopBar: React.FC<TopBarProps> = ({ health, loading, onRefresh }) =>
           <div
             className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-mono font-semibold"
             style={{
-              background: systemOk ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)',
-              border: `1px solid ${systemOk ? 'rgba(16,185,129,0.25)' : 'rgba(245,158,11,0.25)'}`,
-              color: systemOk ? '#10b981' : '#f59e0b',
+              background: 'rgba(99,179,237,0.1)',
+              border: '1px solid rgba(99,179,237,0.25)',
+              color: '#63b3ed',
             }}
           >
-            {systemOk
-              ? <CheckCircle className="w-3 h-3" />
-              : <AlertTriangle className="w-3 h-3" />
-            }
-            {systemOk ? 'READY' : 'PARTIAL'}
+            <Sparkles className="w-3 h-3 text-sky-400" />
+            <span>DORKER READY</span>
           </div>
         )}
 

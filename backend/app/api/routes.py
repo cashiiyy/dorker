@@ -19,9 +19,13 @@ from ..models.schemas import (
     DiscordMessagePreview,
     DiscordSendResponse,
     DiscordConfigUpdate,
-    DiscordStatusResponse
+    DiscordStatusResponse,
+    DiscordSendDorksRequest,
+    DiscordSendDirectResultsRequest,
+    MockModeToggleRequest
 )
 from ..services.lm_studio import LMStudioClient
+
 from ..services.query_validator import QueryValidator
 from ..services.query_generator import QueryGeneratorService
 from ..services.serp_adapter import SerpProviderAdapter
@@ -93,7 +97,8 @@ async def validate_query(req: ValidateQueryRequest):
 @router.post("/search", response_model=SearchResponse)
 async def search_query(req: SearchRequest):
     """Execute search query via configured SERP provider or Mock."""
-    return await serp_adapter.search(req.query, req.num_results)
+    return await serp_adapter.search(req.query, req.num_results, mock_mode=req.mock_mode)
+
 
 @router.post("/sources/preview", response_model=PreviewResponse)
 async def preview_source(req: PreviewRequest):
@@ -196,6 +201,47 @@ async def send_discord_report(req: DiscordSendRequest):
     except RuntimeError as e:
         raise HTTPException(status_code=502, detail=str(e))
 
+@router.post("/integrations/discord/send-dorks", response_model=DiscordSendResponse)
+async def send_dorks_to_discord(req: DiscordSendDorksRequest):
+    """Deliver generated Google dork queries directly to Discord without persistent session."""
+    try:
+        return await discord_service.send_dork_report(
+            title=req.title,
+            objective=req.objective,
+            queries=req.queries,
+            category=req.category
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+@router.post("/integrations/discord/send-results", response_model=DiscordSendResponse)
+async def send_results_to_discord(req: DiscordSendDirectResultsRequest):
+    """Deliver search results directly to Discord webhook."""
+    try:
+        return await discord_service.send_direct_results(
+            query=req.query,
+            results=req.results,
+            title=req.title,
+            objective=req.objective
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+@router.post("/settings/mock-mode")
+async def toggle_mock_mode(req: MockModeToggleRequest):
+    """Dynamically toggle between live SerpApi search and realistic mock results."""
+    serp_adapter.set_mock_mode(req.enabled)
+    serp_info = await serp_adapter.health_check()
+    return {
+        "success": True,
+        "mock_mode": serp_info.get("mock_mode", False),
+        "configured": serp_info.get("configured", False)
+    }
+
 @router.get("/settings/status")
 async def get_settings_status():
     """Return runtime configuration status with secrets masked."""
@@ -213,9 +259,11 @@ async def get_settings_status():
         "lm_studio_model_loaded": models_info.get("configured_model_loaded", False),
         "serp_provider": settings.SERP_PROVIDER,
         "serp_configured": serp_info.get("configured", False),
+        "mock_mode": serp_info.get("mock_mode", False),
         "serp_result_limit": settings.SERP_RESULT_LIMIT,
         "discord_configured": discord_status.configured,
         "discord_enabled": discord_status.enabled,
         "preview_timeout": settings.PREVIEW_TIMEOUT_SECONDS,
         "database_url": settings.DATABASE_URL
     }
+

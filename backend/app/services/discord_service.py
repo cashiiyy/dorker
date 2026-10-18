@@ -3,8 +3,12 @@ import logging
 import re
 from datetime import datetime
 from typing import Dict, Any, List, Optional, Tuple
+import urllib.parse
 import httpx
 from ..config import settings
+
+
+
 from ..models.schemas import (
     ResearchSessionItem,
     DiscordMessagePreview,
@@ -286,3 +290,131 @@ class DiscordService:
             err = f"Connection failed: {str(e)}"
             self.last_error = err
             return {"success": False, "error": err}
+
+    async def send_dork_report(
+        self,
+        title: str,
+        objective: str,
+        queries: List[Dict[str, Any]],
+        category: Optional[str] = "public_documentation"
+    ) -> DiscordSendResponse:
+        """Deliver synthesized Google search dorks directly to the Discord webhook."""
+        if not self.enabled:
+            raise ValueError("Discord integration is disabled in settings.")
+        if not self.is_configured():
+            raise ValueError("No valid Discord webhook URL configured.")
+
+        now_str = datetime.utcnow().isoformat() + "Z"
+        clean_title = self.redact_text(title)[:200]
+        clean_obj = self.redact_text(objective)[:300]
+        cat_clean = (category or "general").replace("_", " ").title()
+
+        fields = []
+        for i, q in enumerate(queries[:8]):
+            label = self.redact_text(q.get("label", f"Dork #{i+1}"))
+            dork = self.redact_text(q.get("query", ""))
+            purpose = self.redact_text(q.get("purpose", ""))
+            risk = q.get("risk_level", "low").upper()
+            encoded_query = urllib.parse.quote_plus(dork)
+            
+            field_name = f"⚡ #{i+1} {label} [{risk}]"[:250]
+            field_val = (
+                f"```bash\n{dork}\n```\n"
+                f"> *{purpose}*\n"
+                f"[🔗 Run in Google Search](https://www.google.com/search?q={encoded_query})\n"
+            )
+            fields.append({
+                "name": field_name,
+                "value": field_val[:1000],
+                "inline": False
+            })
+
+        embed = {
+            "title": f"🎯 DORKER Intelligence: {clean_title}",
+            "description": (
+                f"**Research Objective:** {clean_obj}\n"
+                f"**Category:** `{cat_clean}` • **Synthesized Queries:** `{len(queries)}`\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            ),
+            "color": 0x00F0FF,  # Cyan neon
+            "timestamp": now_str,
+            "fields": fields,
+            "footer": {
+                "text": f"DORKER v{settings.APP_VERSION} • Live Operator Intelligence Dispatch",
+                "icon_url": "https://raw.githubusercontent.com/favicon.ico"
+            }
+        }
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(self.webhook_url, json={"embeds": [embed]})
+            if resp.status_code not in (200, 204):
+                self.last_error = f"Discord returned HTTP {resp.status_code}: {resp.text[:120]}"
+                raise RuntimeError(self.last_error)
+
+        self.last_delivery = now_str
+        self.last_error = None
+        return DiscordSendResponse(success=True, messages_sent=1, delivery_timestamp=now_str)
+
+    async def send_direct_results(
+        self,
+        query: str,
+        results: List[Dict[str, Any]],
+        title: Optional[str] = None,
+        objective: Optional[str] = None
+    ) -> DiscordSendResponse:
+        """Deliver live search results directly without needing a persistent session ID."""
+        if not self.enabled:
+            raise ValueError("Discord integration is disabled in settings.")
+        if not self.is_configured():
+            raise ValueError("No valid Discord webhook URL configured.")
+
+        now_str = datetime.utcnow().isoformat() + "Z"
+        clean_query = self.redact_text(query)[:250]
+        display_title = title or f"SERP Results for: {clean_query[:50]}"
+        
+        fields = []
+        for i, res in enumerate(results[:self.max_results_per_msg]):
+            r_title = self.redact_text(res.get("title", "Untitled Document"))[:180]
+            link = res.get("link", "")
+            domain = res.get("domain", "web")
+            snippet = self.redact_text(res.get("snippet", ""))[:350]
+            date_str = f" • {res.get('date')}" if res.get("date") else ""
+            
+            field_name = f"#{i+1} {r_title}"[:220]
+            field_val = (
+                f"**Source:** [{domain}]({link}){date_str}\n"
+                f"> {snippet}\n"
+            )
+            fields.append({
+                "name": field_name,
+                "value": field_val[:1000],
+                "inline": False
+            })
+
+        embed = {
+            "title": f"🌐 DORKER Search Results: {display_title}",
+            "description": (
+                f"**Executed Operator Query:**\n`{clean_query}`\n"
+                + (f"**Objective:** {self.redact_text(objective)[:200]}\n" if objective else "")
+                + f"**Captured Findings:** {len(results)} sources returned\n"
+                + "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            ),
+            "color": 0x10B981,  # Emerald
+            "timestamp": now_str,
+            "fields": fields,
+            "footer": {
+                "text": f"DORKER v{settings.APP_VERSION} • Public Source Intelligence",
+                "icon_url": "https://raw.githubusercontent.com/favicon.ico"
+            }
+        }
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(self.webhook_url, json={"embeds": [embed]})
+            if resp.status_code not in (200, 204):
+                self.last_error = f"Discord returned HTTP {resp.status_code}: {resp.text[:120]}"
+                raise RuntimeError(self.last_error)
+
+        self.last_delivery = now_str
+        self.last_error = None
+        return DiscordSendResponse(success=True, messages_sent=1, delivery_timestamp=now_str)
+

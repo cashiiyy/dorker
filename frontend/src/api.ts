@@ -188,3 +188,50 @@ export async function sendDiscordReport(req: DiscordSendRequest): Promise<Discor
   }
   return res.json();
 }
+
+export async function sendDorksToDiscord(params: {
+  title: string;
+  objective: string;
+  queries: any[];
+  category?: string;
+}): Promise<DiscordSendResponse> {
+  const res = await fetch(`${BASE_URL}/integrations/discord/send-dorks`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || 'Failed to deliver dorks to Discord');
+  }
+  return res.json();
+}
+
+export async function sendDirectResultsToDiscord(params: {
+  query: string;
+  results: any[];
+  title?: string;
+  objective?: string;
+}): Promise<DiscordSendResponse> {
+  const res = await fetch(`${BASE_URL}/integrations/discord/send-results`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || 'Failed to deliver results to Discord');
+  }
+  return res.json();
+}
+
+export async function toggleMockMode(enabled: boolean): Promise<{ success: boolean; mock_mode: boolean; configured: boolean }> {
+  const res = await fetch(`${BASE_URL}/settings/mock-mode`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled }),
+  });
+  if (!res.ok) throw new Error('Failed to toggle mock mode');
+  return res.json();
+}
+
