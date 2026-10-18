@@ -68,6 +68,8 @@ class SearchRequest(BaseModel):
     num_results: int = Field(default=10, ge=1, le=50)
     engine: str = "google"
     target_domain: Optional[str] = None
+    mock_mode: Optional[bool] = None
+
 
 class SearchResultItem(BaseModel):
     title: str
@@ -153,4 +155,20 @@ class DiscordStatusResponse(BaseModel):
     max_results_per_msg: int
     last_delivery: Optional[str] = None
     last_error: Optional[str] = None
+
+class DiscordSendDorksRequest(BaseModel):
+    title: str
+    objective: str
+    queries: List[Dict[str, Any]]
+    category: Optional[str] = "public_documentation"
+
+class DiscordSendDirectResultsRequest(BaseModel):
+    query: str
+    results: List[Dict[str, Any]]
+    title: Optional[str] = None
+    objective: Optional[str] = None
+
+class MockModeToggleRequest(BaseModel):
+    enabled: bool
+
 

@@ -12,29 +12,39 @@ class SerpProviderAdapter:
     
     def __init__(self, provider: Optional[str] = None, api_key: Optional[str] = None):
         self.provider = provider or settings.SERP_PROVIDER
-        self.api_key = api_key if api_key is not None else settings.SERPAPI_API_KEY
+        self.api_key = api_key
         self.result_limit = settings.SERP_RESULT_LIMIT
+        self.force_mock = False
+
+    def get_effective_key(self) -> str:
+        return self.api_key if self.api_key is not None else settings.SERPAPI_API_KEY
 
     def has_credentials(self) -> bool:
-        return bool(self.api_key and len(self.api_key.strip()) > 5)
+        key = self.get_effective_key()
+        return bool(key and len(key.strip()) > 5)
+
+    def set_mock_mode(self, enabled: bool):
+        self.force_mock = enabled
 
     async def health_check(self) -> Dict[str, Any]:
         """Check provider status without disclosing secret keys."""
         configured = self.has_credentials()
+        key = self.get_effective_key()
+        effective_mock = self.force_mock or not configured
         return {
             "provider": self.provider,
             "configured": configured,
-            "mock_mode": not configured,
-            "masked_key": f"{self.api_key[:4]}...{self.api_key[-4:]}" if configured and len(self.api_key) > 8 else ("configured" if configured else "none")
+            "mock_mode": effective_mock,
+            "masked_key": f"{key[:4]}...{key[-4:]}" if configured and len(key) > 8 else ("configured" if configured else "none")
         }
 
-    async def search(self, query: str, limit: Optional[int] = None) -> SearchResponse:
+    async def search(self, query: str, limit: Optional[int] = None, mock_mode: Optional[bool] = None) -> SearchResponse:
         """Perform search against SERP API or return structured mock results."""
         max_results = min(limit or self.result_limit, 50)
+        use_mock = mock_mode if mock_mode is not None else (self.force_mock or not self.has_credentials())
 
-        # If no API key configured, return high-fidelity mock data clearly labeled as mock
-        if not self.has_credentials():
-            logger.info("No SERP API key configured. Serving realistic mock results.")
+        if use_mock:
+            logger.info("Serving realistic mock results (mock mode active).")
             return self._generate_mock_results(query, max_results)
 
         if self.provider == "serpapi":
@@ -42,14 +52,16 @@ class SerpProviderAdapter:
         else:
             return self._generate_mock_results(query, max_results)
 
+
     async def _search_serpapi(self, query: str, limit: int) -> SearchResponse:
         url = "https://serpapi.com/search.json"
         params = {
             "q": query,
             "engine": "google",
-            "api_key": self.api_key,
+            "api_key": self.get_effective_key(),
             "num": limit
         }
+
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
                 resp = await client.get(url, params=params)
