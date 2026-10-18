@@ -15,6 +15,15 @@ class LMStudioClient:
         self.model_id = model or settings.LM_STUDIO_MODEL
         self.timeout = settings.LM_STUDIO_TIMEOUT_SECONDS
 
+    async def is_reachable(self) -> bool:
+        """Fast check to see if LM Studio local port is responding (timeout 1.5s)."""
+        try:
+            async with httpx.AsyncClient(timeout=1.5) as client:
+                resp = await client.get(f"{self.base_url}/models")
+                return resp.status_code == 200
+        except Exception:
+            return False
+
     async def get_models(self) -> Dict[str, Any]:
         """Fetch models from LM Studio and inspect loaded model details."""
         url = f"{self.base_url}/models"

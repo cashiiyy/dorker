@@ -117,4 +117,44 @@ export interface SettingsStatus {
   serp_result_limit: number;
   preview_timeout: number;
   database_url: string;
+  discord_configured: boolean;
+  discord_enabled: boolean;
+}
+
+// ---- Discord Integration ----
+
+export interface DiscordStatus {
+  configured: boolean;
+  enabled: boolean;
+  masked_webhook: string;
+  max_results_per_msg: number;
+  last_delivery: string | null;
+  last_error: string | null;
+}
+
+export interface DiscordConfigUpdate {
+  webhook_url: string;
+  enabled: boolean;
+  max_results_per_msg: number;
+}
+
+export interface DiscordSendRequest {
+  session_id: string;
+  selected_result_indices: number[];
+  custom_title?: string;
+  query_executed?: string;
+}
+
+export interface DiscordMessagePreview {
+  content: string | null;
+  embeds: any[];
+  total_characters: number;
+  message_count: number;
+}
+
+export interface DiscordSendResponse {
+  success: boolean;
+  messages_sent: number;
+  delivery_timestamp: string;
+  error?: string;
 }

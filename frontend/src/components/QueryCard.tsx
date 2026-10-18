@@ -1,141 +1,156 @@
 import React, { useState } from 'react';
 import {
-  Copy,
-  Check,
-  ExternalLink,
-  Search,
-  Edit2,
-  AlertTriangle,
-  ShieldAlert,
-  ShieldCheck,
-  Info,
-  CheckCircle2
+  Copy, Check, Search, AlertTriangle, ShieldCheck,
+  ChevronRight, ExternalLink, Zap, Code2, Info
 } from 'lucide-react';
 import { GeneratedQuery } from '../types';
 
 interface QueryCardProps {
   query: GeneratedQuery;
-  onSearch: (queryString: string) => void;
-  onUpdateQuery?: (id: string, newQuery: string) => void;
+  isSearching: boolean;
+  onSearch: (query: string) => void;
 }
 
-export const QueryCard: React.FC<QueryCardProps> = ({
-  query,
-  onSearch,
-  onUpdateQuery,
-}) => {
+/** Syntax-highlight Google dork operators in a query string */
+function highlightDork(raw: string): React.ReactNode[] {
+  // Order matters: more specific patterns first
+  const patterns: { re: RegExp; cls: string }[] = [
+    { re: /(site:[^\s]+)/g,           cls: 'dork-site'  },
+    { re: /(filetype:[^\s]+)/g,       cls: 'dork-op'    },
+    { re: /(intitle:[^\s]+)/g,        cls: 'dork-op'    },
+    { re: /(inurl:[^\s]+)/g,          cls: 'dork-op'    },
+    { re: /(intext:[^\s]+)/g,         cls: 'dork-op'    },
+    { re: /(ext:[^\s]+)/g,            cls: 'dork-op'    },
+    { re: /("(?:[^"\\]|\\.)*")/g,     cls: 'dork-quote' },
+    { re: /(\bOR\b)/g,                cls: 'dork-op'    },
+    { re: /(\bAND\b)/g,               cls: 'dork-op'    },
+    { re: /(-[^\s"]+)/g,              cls: 'dork-minus' },
+  ];
+
+  // Use a single-pass approach: split into tokens
+  const tokens: { text: string; cls?: string }[] = [{ text: raw }];
+
+  for (const { re, cls } of patterns) {
+    const next: typeof tokens = [];
+    for (const tok of tokens) {
+      if (tok.cls) { next.push(tok); continue; } // already classified
+      const parts = tok.text.split(re);
+      parts.forEach((part, i) => {
+        if (!part) return;
+        // Every 2nd part (i % 2 === 1) is the captured group (a match)
+        next.push({ text: part, cls: i % 2 === 1 ? cls : undefined });
+      });
+    }
+    tokens.splice(0, tokens.length, ...next);
+  }
+
+  return tokens.map((tok, i) =>
+    tok.cls
+      ? <span key={i} className={tok.cls}>{tok.text}</span>
+      : <span key={i}>{tok.text}</span>
+  );
+}
+
+const RISK_CONFIG = {
+  low:        { label: 'LOW RISK',   cls: 'badge-low',    border: 'rgba(16,185,129,0.2)',  glow: 'rgba(16,185,129,0.06)' },
+  medium:     { label: 'MEDIUM',     cls: 'badge-medium', border: 'rgba(245,158,11,0.2)',  glow: 'rgba(245,158,11,0.04)' },
+  high:       { label: 'HIGH RISK',  cls: 'badge-high',   border: 'rgba(239,68,68,0.2)',   glow: 'rgba(239,68,68,0.04)' },
+  prohibited: { label: 'BLOCKED',    cls: 'badge-high',   border: 'rgba(239,68,68,0.35)',  glow: 'rgba(239,68,68,0.08)' },
+};
+
+export const QueryCard: React.FC<QueryCardProps> = ({ query, isSearching, onSearch }) => {
   const [copied, setCopied] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
-  const [editedQuery, setEditedQuery] = useState(query.query);
+  const [showNotes, setShowNotes] = useState(false);
+
+  const risk = RISK_CONFIG[query.risk_level] || RISK_CONFIG.low;
+  const isBlocked = query.risk_level === 'prohibited' || !query.is_valid;
 
   const handleCopy = () => {
-    // Exact validated query string, without extra formatting
-    navigator.clipboard.writeText(isEditing ? editedQuery : query.query);
+    navigator.clipboard.writeText(query.query);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleOpenGoogle = () => {
-    const q = isEditing ? editedQuery : query.query;
-    window.open(`https://www.google.com/search?q=${encodeURIComponent(q)}`, '_blank', 'noopener,noreferrer');
-  };
-
-  const handleSaveEdit = () => {
-    if (onUpdateQuery) {
-      onUpdateQuery(query.id, editedQuery);
-    }
-    setIsEditing(false);
-  };
-
-  const getRiskBadge = () => {
-    switch (query.risk_level) {
-      case 'prohibited':
-        return (
-          <span className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-rose-500/15 text-rose-400 border border-rose-500/30 font-medium">
-            <ShieldAlert className="w-3 h-3" /> Prohibited
-          </span>
-        );
-      case 'high':
-        return (
-          <span className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30 font-medium">
-            <AlertTriangle className="w-3 h-3" /> Scope Warning
-          </span>
-        );
-      case 'medium':
-        return (
-          <span className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-blue-500/15 text-blue-400 border border-blue-500/30 font-medium">
-            <Info className="w-3 h-3" /> Sensitive Scope
-          </span>
-        );
-      default:
-        return (
-          <span className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-medium">
-            <ShieldCheck className="w-3 h-3" /> Validated Safe
-          </span>
-        );
-    }
+  const openInGoogle = () => {
+    window.open(`https://www.google.com/search?q=${encodeURIComponent(query.query)}`, '_blank', 'noopener,noreferrer');
   };
 
   return (
-    <div className="glass-card rounded-xl p-5 border border-white/10 hover:border-sky-500/30 flex flex-col justify-between group">
-      <div>
-        {/* Card Header */}
-        <div className="flex items-start justify-between gap-3 mb-2.5">
-          <div className="flex items-center gap-2 flex-wrap">
-            <h4 className="font-semibold text-slate-100 text-sm">{query.label}</h4>
-            {getRiskBadge()}
-            {query.requires_scope_confirmation && (
-              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-400/10 text-amber-300 border border-amber-400/20">
-                Needs Owner Auth
+    <div
+      className="glass-card rounded-2xl overflow-hidden"
+      style={{
+        borderColor: isBlocked ? 'rgba(239,68,68,0.2)' : risk.border,
+        boxShadow: `0 4px 30px rgba(0,0,0,0.3), inset 0 0 30px ${risk.glow}`,
+      }}
+    >
+      {/* Top accent line */}
+      <div
+        className="h-0.5"
+        style={{
+          background: isBlocked
+            ? 'linear-gradient(90deg, #ef4444, #dc2626)'
+            : query.risk_level === 'medium'
+            ? 'linear-gradient(90deg, #f59e0b, #d97706)'
+            : 'linear-gradient(90deg, #63b3ed, #a78bfa)',
+        }}
+      />
+
+      <div className="p-5">
+        {/* Header row */}
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap mb-1">
+              <Code2 className="w-3.5 h-3.5 shrink-0" style={{ color: '#63b3ed' }} />
+              <span
+                className="text-sm font-bold"
+                style={{ color: '#f0f6ff', fontFamily: "'Space Grotesk', sans-serif" }}
+              >
+                {query.label}
               </span>
-            )}
+              <span className={`badge ${risk.cls}`}>{risk.label}</span>
+              {query.requires_scope_confirmation && (
+                <span className="badge badge-medium">SCOPE CONFIRM</span>
+              )}
+            </div>
+            <p className="text-[11px]" style={{ color: 'rgba(148,163,184,0.65)', fontFamily: "'Space Grotesk', sans-serif" }}>
+              {query.purpose}
+            </p>
           </div>
-          <button
-            onClick={() => setIsEditing(!isEditing)}
-            className="text-slate-400 hover:text-slate-200 text-xs flex items-center gap-1 px-2 py-1 rounded bg-white/5 hover:bg-white/10"
-            title="Edit query string"
-          >
-            <Edit2 className="w-3 h-3" />
-            <span className="text-[11px]">{isEditing ? 'Done' : 'Edit'}</span>
-          </button>
+
+          {/* Notes toggle */}
+          {query.validation_notes.length > 0 && (
+            <button
+              onClick={() => setShowNotes(!showNotes)}
+              className="p-1.5 rounded-lg transition-all"
+              style={{
+                background: showNotes ? 'rgba(99,179,237,0.12)' : 'rgba(255,255,255,0.04)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                color: showNotes ? '#63b3ed' : 'rgba(148,163,184,0.5)',
+              }}
+              title="Show validation notes"
+            >
+              <Info className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
 
-        {/* Purpose Description */}
-        <p className="text-xs text-slate-400 mb-3.5 leading-relaxed">
-          {query.purpose}
-        </p>
+        {/* Dork Query Display */}
+        <div className="dork-query mb-3 select-all">
+          {highlightDork(query.query)}
+        </div>
 
-        {/* Google Query Code Box */}
-        {isEditing ? (
-          <div className="space-y-2 mb-3">
-            <textarea
-              value={editedQuery}
-              onChange={(e) => setEditedQuery(e.target.value)}
-              className="w-full bg-[#0a0d13] border border-sky-500/40 rounded-lg p-2.5 text-xs font-mono text-sky-200 focus:outline-none focus:ring-1 focus:ring-sky-400"
-              rows={2}
-            />
-            <button
-              onClick={handleSaveEdit}
-              className="text-xs px-2.5 py-1 rounded bg-sky-500/20 text-sky-300 hover:bg-sky-500/30 border border-sky-500/30 font-medium"
-            >
-              Apply Changes
-            </button>
-          </div>
-        ) : (
-          <div className="relative mb-3.5 group/code">
-            <div className="bg-[#0b0e14] border border-white/10 rounded-lg p-3 font-mono text-xs text-sky-300 break-all select-all leading-normal shadow-inner">
-              {query.query}
-            </div>
-          </div>
-        )}
-
-        {/* Search Operators Tags */}
-        {query.operators && query.operators.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 mb-3.5">
-            {query.operators.map((op, i) => (
+        {/* Operator badges */}
+        {query.operators.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-3">
+            {query.operators.map((op) => (
               <span
-                key={i}
-                className="text-[11px] font-mono px-2 py-0.5 rounded-md bg-[#161b26] text-slate-300 border border-white/5"
+                key={op}
+                className="text-[10px] px-2 py-0.5 rounded font-mono font-bold"
+                style={{
+                  background: 'rgba(99,179,237,0.08)',
+                  border: '1px solid rgba(99,179,237,0.15)',
+                  color: '#93c5fd',
+                }}
               >
                 {op}
               </span>
@@ -143,56 +158,96 @@ export const QueryCard: React.FC<QueryCardProps> = ({
           </div>
         )}
 
-        {/* Validation Notes if any */}
-        {query.validation_notes && query.validation_notes.length > 0 && (
-          <div className="mb-3.5 p-2 rounded bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-300 space-y-0.5 font-sans">
-            {query.validation_notes.map((note, idx) => (
-              <div key={idx} className="flex items-start gap-1.5">
-                <Info className="w-3 h-3 shrink-0 mt-0.5 text-amber-400" />
-                <span>{note}</span>
+        {/* Validation notes */}
+        {showNotes && query.validation_notes.length > 0 && (
+          <div
+            className="mb-3 p-3 rounded-xl text-[11px] space-y-1"
+            style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.15)' }}
+          >
+            {query.validation_notes.map((note, i) => (
+              <div key={i} className="flex items-start gap-1.5" style={{ color: '#fde68a' }}>
+                <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5 text-amber-400" />
+                {note}
               </div>
             ))}
           </div>
         )}
-      </div>
 
-      {/* Action Toolbar */}
-      <div className="pt-3 border-t border-white/10 flex items-center justify-between gap-2 mt-1">
-        <div className="flex items-center gap-1.5">
-          {/* Copy Action */}
+        {/* Blocked warning */}
+        {isBlocked && (
+          <div
+            className="flex items-center gap-2 mb-3 p-2.5 rounded-lg text-xs"
+            style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.15)', color: '#fca5a5' }}
+          >
+            <ShieldCheck className="w-3.5 h-3.5 shrink-0 text-red-400" />
+            Blocked by security guardrails. Query requires scope authorization or targets prohibited resources.
+          </div>
+        )}
+
+        {/* Action buttons */}
+        <div className="flex items-center gap-2 pt-1">
+          {/* Copy */}
           <button
             onClick={handleCopy}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-              copied
-                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                : 'bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10'
-            }`}
-            title="Copy exact Google query"
+            className="glow-btn flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
+            style={{
+              background: copied ? 'rgba(16,185,129,0.15)' : 'rgba(255,255,255,0.04)',
+              border: `1px solid ${copied ? 'rgba(16,185,129,0.3)' : 'rgba(255,255,255,0.08)'}`,
+              color: copied ? '#34d399' : 'rgba(148,163,184,0.8)',
+            }}
           >
-            {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-            <span>{copied ? 'Copied' : 'Copy'}</span>
+            {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+            {copied ? 'Copied!' : 'Copy'}
           </button>
 
-          {/* Open in Google Search Action */}
+          {/* Open in Google */}
           <button
-            onClick={handleOpenGoogle}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 transition-all"
-            title="Open query directly on Google.com"
+            onClick={openInGoogle}
+            className="glow-btn flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
+            style={{
+              background: 'rgba(255,255,255,0.04)',
+              border: '1px solid rgba(255,255,255,0.08)',
+              color: 'rgba(148,163,184,0.8)',
+            }}
           >
-            <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
-            <span>Open Google</span>
+            <ExternalLink className="w-3.5 h-3.5" />
+            Try in Google
+          </button>
+
+          {/* Execute via SERP */}
+          <button
+            onClick={() => !isBlocked && onSearch(query.query)}
+            disabled={isSearching || isBlocked}
+            className="glow-btn ml-auto flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed"
+            style={{
+              background: isSearching
+                ? 'rgba(99,179,237,0.1)'
+                : isBlocked
+                ? 'rgba(239,68,68,0.08)'
+                : 'linear-gradient(135deg, rgba(99,179,237,0.25), rgba(167,139,250,0.2))',
+              border: `1px solid ${isBlocked ? 'rgba(239,68,68,0.2)' : 'rgba(99,179,237,0.3)'}`,
+              color: isBlocked ? '#f87171' : '#f0f6ff',
+              fontFamily: "'Space Grotesk', sans-serif",
+            }}
+          >
+            {isSearching ? (
+              <>
+                <Search className="w-3.5 h-3.5 animate-spin" style={{ color: '#63b3ed' }} />
+                Searching…
+              </>
+            ) : isBlocked ? (
+              <>
+                <ShieldCheck className="w-3.5 h-3.5" />
+                Blocked
+              </>
+            ) : (
+              <>
+                <Zap className="w-3.5 h-3.5" style={{ color: '#63b3ed' }} />
+                Execute SERP
+              </>
+            )}
           </button>
         </div>
-
-        {/* Search with SERP API Action */}
-        <button
-          onClick={() => onSearch(isEditing ? editedQuery : query.query)}
-          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 hover:text-sky-200 border border-sky-500/40 transition-all shadow-sm"
-          title="Query SERP API and inspect results"
-        >
-          <Search className="w-3.5 h-3.5 text-sky-400" />
-          <span>SERP Search</span>
-        </button>
       </div>
     </div>
   );

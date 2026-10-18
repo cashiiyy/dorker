@@ -1,1 +1,1 @@
-# SearchLens AI Backend
+# Dorker — Think. Dork. Discover.

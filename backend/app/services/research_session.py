@@ -110,7 +110,7 @@ class ResearchSessionService:
             return None
 
         md = [
-            f"# SearchLens AI Research Report: {sess.title}",
+            f"# Dorker Research Report: {sess.title}",
             f"**Session ID:** `{sess.id}`  ",
             f"**Date:** {sess.created_at}  ",
             f"**Category:** {sess.category}  ",

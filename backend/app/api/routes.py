@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import PlainTextResponse
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from ..config import settings
 from ..models.schemas import (
@@ -13,7 +13,13 @@ from ..models.schemas import (
     PreviewRequest,
     PreviewResponse,
     ResearchSessionCreate,
-    ResearchSessionItem
+    ResearchSessionItem,
+    DiscordSendRequest,
+    DiscordPreviewRequest,
+    DiscordMessagePreview,
+    DiscordSendResponse,
+    DiscordConfigUpdate,
+    DiscordStatusResponse
 )
 from ..services.lm_studio import LMStudioClient
 from ..services.query_validator import QueryValidator
@@ -21,6 +27,7 @@ from ..services.query_generator import QueryGeneratorService
 from ..services.serp_adapter import SerpProviderAdapter
 from ..services.preview_service import PreviewService
 from ..services.research_session import ResearchSessionService
+from ..services.discord_service import DiscordService
 
 router = APIRouter()
 
@@ -29,15 +36,19 @@ query_generator = QueryGeneratorService(lm_client)
 serp_adapter = SerpProviderAdapter()
 preview_service = PreviewService()
 session_service = ResearchSessionService()
+discord_service = DiscordService()
 
 @router.get("/health")
 async def health_check():
-    """System health check across local LM Studio, SERP adapter, and SQLite DB."""
+    """System health check across local LM Studio, SERP adapter, SQLite DB, and Discord."""
     models_info = await lm_client.get_models()
     serp_info = await serp_adapter.health_check()
+    discord_status = discord_service.get_status()
     return {
         "status": "healthy",
         "app": settings.APP_NAME,
+        "tagline": settings.APP_TAGLINE,
+        "version": settings.APP_VERSION,
         "env": settings.APP_ENV,
         "lm_studio": {
             "connected": models_info.get("connected", False),
@@ -46,6 +57,10 @@ async def health_check():
             "base_url": settings.LM_STUDIO_BASE_URL
         },
         "serp_provider": serp_info,
+        "discord_integration": {
+            "configured": discord_status.configured,
+            "enabled": discord_status.enabled
+        },
         "database": "sqlite_ready"
     }
 
@@ -119,13 +134,78 @@ async def export_research_markdown(session_id: str):
         raise HTTPException(status_code=404, detail="Session not found")
     return PlainTextResponse(content=md, media_type="text/markdown")
 
+# --- Discord Integration Endpoints ---
+
+@router.get("/integrations/discord/status", response_model=DiscordStatusResponse)
+async def get_discord_status():
+    """Get current Discord webhook configuration and delivery status without revealing secrets."""
+    return discord_service.get_status()
+
+@router.post("/integrations/discord/config", response_model=DiscordStatusResponse)
+async def update_discord_config(config: DiscordConfigUpdate):
+    """Update runtime Discord webhook configuration."""
+    discord_service.update_config(
+        webhook_url=config.webhook_url,
+        enabled=config.enabled,
+        max_results=config.max_results_per_msg
+    )
+    return discord_service.get_status()
+
+@router.post("/integrations/discord/clear", response_model=DiscordStatusResponse)
+async def clear_discord_config():
+    """Clear Discord webhook configuration."""
+    discord_service.clear_config()
+    return discord_service.get_status()
+
+@router.post("/integrations/discord/test")
+async def test_discord_webhook():
+    """Send test verification message to configured Discord webhook."""
+    return await discord_service.test_webhook()
+
+@router.post("/integrations/discord/preview", response_model=DiscordMessagePreview)
+async def preview_discord_message(req: DiscordPreviewRequest):
+    """Generate preview of Discord embed structure for reviewed results."""
+    sess = session_service.get_session(req.session_id)
+    if not sess:
+        raise HTTPException(status_code=404, detail="Session not found")
+    try:
+        return discord_service.preview_payload(
+            session=sess,
+            selected_indices=req.selected_result_indices,
+            custom_title=req.custom_title,
+            query_executed=req.query_executed
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.post("/integrations/discord/send", response_model=DiscordSendResponse)
+async def send_discord_report(req: DiscordSendRequest):
+    """Deliver reviewed research results to configured Discord webhook."""
+    sess = session_service.get_session(req.session_id)
+    if not sess:
+        raise HTTPException(status_code=404, detail="Session not found")
+    try:
+        return await discord_service.send_report(
+            session=sess,
+            selected_indices=req.selected_result_indices,
+            custom_title=req.custom_title,
+            query_executed=req.query_executed
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
 @router.get("/settings/status")
 async def get_settings_status():
     """Return runtime configuration status with secrets masked."""
     serp_info = await serp_adapter.health_check()
     models_info = await lm_client.get_models()
+    discord_status = discord_service.get_status()
     return {
         "app_name": settings.APP_NAME,
+        "app_tagline": settings.APP_TAGLINE,
+        "app_version": settings.APP_VERSION,
         "app_env": settings.APP_ENV,
         "lm_studio_base_url": settings.LM_STUDIO_BASE_URL,
         "lm_studio_model": settings.LM_STUDIO_MODEL,
@@ -134,6 +214,8 @@ async def get_settings_status():
         "serp_provider": settings.SERP_PROVIDER,
         "serp_configured": serp_info.get("configured", False),
         "serp_result_limit": settings.SERP_RESULT_LIMIT,
+        "discord_configured": discord_status.configured,
+        "discord_enabled": discord_status.enabled,
         "preview_timeout": settings.PREVIEW_TIMEOUT_SECONDS,
         "database_url": settings.DATABASE_URL
     }

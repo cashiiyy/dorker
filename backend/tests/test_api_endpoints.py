@@ -68,7 +68,7 @@ def test_api_research_lifecycle():
     # 3. Export markdown
     res_exp = client.get(f"/api/research/{session_id}/export")
     assert res_exp.status_code == 200
-    assert "SearchLens AI Research Report" in res_exp.text
+    assert "Dorker Research Report" in res_exp.text
 
     # 4. Delete session
     res_del = client.delete(f"/api/research/{session_id}")

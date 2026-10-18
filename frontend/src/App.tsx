@@ -6,9 +6,10 @@ import { HistoryView } from './components/HistoryView';
 import { ModelSettingsView } from './components/ModelSettingsView';
 import { SecurityView } from './components/SecurityView';
 import { AboutView } from './components/AboutView';
+import { DiscordSettingsView } from './components/DiscordSettingsView';
 import { PreviewModal } from './components/PreviewModal';
 import { SystemHealth, SettingsStatus, PreviewResponse, ResearchSession } from './types';
-import { fetchHealth, fetchSettings, fetchPreview, listSessions } from './api';
+import { fetchHealth, fetchSettings, fetchPreview, listSessions, getDiscordStatus } from './api';
 
 export function App() {
   const [currentTab, setCurrentTab] = useState<NavTab>('workbench');
@@ -16,12 +17,10 @@ export function App() {
   const [settings, setSettings] = useState<SettingsStatus | null>(null);
   const [loadingHealth, setLoadingHealth] = useState(false);
   const [savedSessionsCount, setSavedSessionsCount] = useState(0);
+  const [discordActive, setDiscordActive] = useState(false);
 
-  // Preview state
   const [previewData, setPreviewData] = useState<PreviewResponse | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
-
-  // Loaded session from history into workbench
   const [activeSession, setActiveSession] = useState<ResearchSession | null>(null);
 
   const loadStatus = async () => {
@@ -30,11 +29,17 @@ export function App() {
       const [h, s, sessions] = await Promise.all([
         fetchHealth().catch(() => null),
         fetchSettings().catch(() => null),
-        listSessions().catch(() => [])
+        listSessions().catch(() => []),
       ]);
       if (h) setHealth(h);
       if (s) setSettings(s);
       if (sessions) setSavedSessionsCount(sessions.length);
+
+      // Discord status
+      try {
+        const ds = await getDiscordStatus();
+        setDiscordActive(ds.configured && ds.enabled);
+      } catch {}
     } finally {
       setLoadingHealth(false);
     }
@@ -42,7 +47,6 @@ export function App() {
 
   useEffect(() => {
     loadStatus();
-    // Periodic health refresh every 30s
     const timer = setInterval(loadStatus, 30000);
     return () => clearInterval(timer);
   }, []);
@@ -55,13 +59,9 @@ export function App() {
       setPreviewData(res);
     } catch (err: any) {
       setPreviewData({
-        url,
-        title: 'Preview Failed',
-        domain: '',
-        content_excerpt: '',
-        sanitized_html: '',
-        status: 'error',
-        error: err.message || 'Failed to fetch preview'
+        url, title: 'Preview Failed', domain: '',
+        content_excerpt: '', sanitized_html: '',
+        status: 'error', error: err.message || 'Failed to fetch preview',
       });
     } finally {
       setPreviewLoading(false);
@@ -74,8 +74,11 @@ export function App() {
   };
 
   return (
-    <div className="flex h-screen bg-[#0a0c10] text-slate-100 overflow-hidden font-sans">
-      {/* Left Navigation Sidebar */}
+    <div
+      className="flex h-screen overflow-hidden"
+      style={{ background: 'var(--bg-void)', color: 'var(--text-primary)', fontFamily: 'var(--font-sans)' }}
+    >
+      {/* Sidebar */}
       <Sidebar
         currentTab={currentTab}
         onSelectTab={(tab) => {
@@ -83,19 +86,14 @@ export function App() {
           if (tab !== 'workbench') setActiveSession(null);
         }}
         savedSessionsCount={savedSessionsCount}
+        discordActive={discordActive}
       />
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Top Header */}
-        <TopBar
-          health={health}
-          loading={loadingHealth}
-          onRefresh={loadStatus}
-        />
+      {/* Main */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative" style={{ zIndex: 1 }}>
+        <TopBar health={health} loading={loadingHealth} onRefresh={loadStatus} />
 
-        {/* Dynamic View Scrollable Body */}
-        <main className="flex-1 overflow-y-auto p-6 sm:p-8">
+        <main className="flex-1 overflow-y-auto p-6 lg:p-8">
           {currentTab === 'workbench' && (
             <QueryWorkbench
               onPreviewUrl={handlePreviewUrl}
@@ -103,26 +101,25 @@ export function App() {
               initialSession={activeSession}
             />
           )}
-
           {currentTab === 'history' && (
             <HistoryView onLoadSession={handleLoadSessionFromHistory} />
           )}
-
           {currentTab === 'models' && (
             <ModelSettingsView settings={settings} health={health} />
           )}
-
           {currentTab === 'security' && (
             <SecurityView />
           )}
-
+          {currentTab === 'settings' && (
+            <DiscordSettingsView />
+          )}
           {currentTab === 'about' && (
             <AboutView />
           )}
         </main>
       </div>
 
-      {/* Safe Source Preview Modal */}
+      {/* Preview Modal */}
       <PreviewModal
         preview={previewData}
         loading={previewLoading}

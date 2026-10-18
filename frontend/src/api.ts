@@ -6,7 +6,12 @@ import {
   ResearchSession,
   SystemHealth,
   SettingsStatus,
-  ResearchCategory
+  ResearchCategory,
+  DiscordStatus,
+  DiscordConfigUpdate,
+  DiscordSendRequest,
+  DiscordMessagePreview,
+  DiscordSendResponse
 } from './types';
 
 const BASE_URL = '/api';
@@ -118,4 +123,68 @@ export async function deleteSession(sessionId: string): Promise<void> {
 
 export function getExportUrl(sessionId: string): string {
   return `${BASE_URL}/research/${sessionId}/export`;
+}
+
+// ---- Discord Integration API ----
+
+export async function getDiscordStatus(): Promise<DiscordStatus> {
+  const res = await fetch(`${BASE_URL}/integrations/discord/status`);
+  if (!res.ok) throw new Error('Failed to get Discord status');
+  return res.json();
+}
+
+export async function updateDiscordConfig(config: DiscordConfigUpdate): Promise<DiscordStatus> {
+  const res = await fetch(`${BASE_URL}/integrations/discord/config`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || 'Failed to update Discord config');
+  }
+  return res.json();
+}
+
+export async function clearDiscordConfig(): Promise<DiscordStatus> {
+  const res = await fetch(`${BASE_URL}/integrations/discord/clear`, { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to clear Discord config');
+  return res.json();
+}
+
+export async function testDiscordWebhook(): Promise<{ success: boolean; error?: string }> {
+  const res = await fetch(`${BASE_URL}/integrations/discord/test`, { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to test Discord webhook');
+  return res.json();
+}
+
+export async function previewDiscordMessage(params: {
+  session_id: string;
+  selected_result_indices: number[];
+  custom_title?: string;
+  query_executed?: string;
+}): Promise<DiscordMessagePreview> {
+  const res = await fetch(`${BASE_URL}/integrations/discord/preview`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || 'Failed to preview Discord message');
+  }
+  return res.json();
+}
+
+export async function sendDiscordReport(req: DiscordSendRequest): Promise<DiscordSendResponse> {
+  const res = await fetch(`${BASE_URL}/integrations/discord/send`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || 'Failed to send Discord report');
+  }
+  return res.json();
 }

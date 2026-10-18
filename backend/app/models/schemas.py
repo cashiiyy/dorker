@@ -115,3 +115,42 @@ class ResearchSessionItem(BaseModel):
     queries: List[Dict[str, Any]] = []
     results: List[Dict[str, Any]] = []
     notes: Optional[str] = None
+
+# Discord Integration Schemas
+class DiscordSendRequest(BaseModel):
+    session_id: str
+    selected_result_indices: List[int] = Field(..., min_length=1)
+    custom_title: Optional[str] = None
+    query_executed: Optional[str] = None
+
+class DiscordPreviewRequest(BaseModel):
+    session_id: str
+    selected_result_indices: List[int] = Field(..., min_length=1)
+    custom_title: Optional[str] = None
+    query_executed: Optional[str] = None
+
+class DiscordMessagePreview(BaseModel):
+    content: Optional[str] = None
+    embeds: List[Dict[str, Any]] = []
+    total_characters: int = 0
+    message_count: int = 1
+
+class DiscordSendResponse(BaseModel):
+    success: bool
+    messages_sent: int = 0
+    delivery_timestamp: str
+    error: Optional[str] = None
+
+class DiscordConfigUpdate(BaseModel):
+    webhook_url: str = Field(..., min_length=10)
+    enabled: bool = True
+    max_results_per_msg: int = Field(default=5, ge=1, le=10)
+
+class DiscordStatusResponse(BaseModel):
+    configured: bool
+    enabled: bool
+    masked_webhook: str
+    max_results_per_msg: int
+    last_delivery: Optional[str] = None
+    last_error: Optional[str] = None
+

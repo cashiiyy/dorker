@@ -1,5 +1,14 @@
 import React from 'react';
-import { Cpu, Globe, Database, RefreshCw, CheckCircle2, AlertTriangle, Shield } from 'lucide-react';
+import {
+  Activity,
+  RefreshCw,
+  Wifi,
+  WifiOff,
+  Zap,
+  AlertTriangle,
+  CheckCircle,
+  Clock
+} from 'lucide-react';
 import { SystemHealth } from '../types';
 
 interface TopBarProps {
@@ -9,68 +18,138 @@ interface TopBarProps {
 }
 
 export const TopBar: React.FC<TopBarProps> = ({ health, loading, onRefresh }) => {
-  const lmConnected = health?.lm_studio?.connected ?? false;
-  const lmModelLoaded = health?.lm_studio?.configured_model_loaded ?? false;
-  const serpConfigured = health?.serp_provider?.configured ?? false;
+  const lmOk = health?.lm_studio?.connected && health?.lm_studio?.configured_model_loaded;
+  const serpOk = health?.serp_provider?.configured;
+  const discordOk = (health as any)?.discord_integration?.configured;
+  const systemOk = lmOk && serpOk;
 
   return (
-    <header className="h-16 border-b border-white/10 bg-[#0d1017]/90 backdrop-blur px-6 flex items-center justify-between z-10">
-      <div className="flex items-center gap-3">
-        <div className="text-xs text-slate-400 font-mono flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-          <span className="text-slate-200 font-semibold uppercase tracking-wider">Operational</span>
-        </div>
-        <div className="h-4 w-px bg-white/10" />
-        <span className="text-xs text-slate-400 font-medium hidden md:inline">
-          Google Search Operator Workbench
-        </span>
+    <header
+      className="h-14 flex items-center px-6 gap-4 shrink-0 relative"
+      style={{
+        background: 'rgba(6, 10, 18, 0.90)',
+        borderBottom: '1px solid rgba(255,255,255,0.06)',
+        backdropFilter: 'blur(20px)',
+      }}
+    >
+      {/* Page title */}
+      <div className="flex items-center gap-2.5">
+        <div
+          className="w-1.5 h-5 rounded-full"
+          style={{
+            background: 'linear-gradient(to bottom, #63b3ed, #a78bfa)',
+            boxShadow: '0 0 10px rgba(99,179,237,0.5)',
+          }}
+        />
+        <h1
+          className="text-sm font-bold tracking-wider"
+          style={{
+            fontFamily: "'Space Grotesk', sans-serif",
+            background: 'linear-gradient(135deg, #f0f6ff 0%, #63b3ed 100%)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            backgroundClip: 'text',
+          }}
+        >
+          Google Dork Workbench
+        </h1>
       </div>
 
-      <div className="flex items-center gap-3">
-        {/* LM Studio status */}
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#141822] border border-white/10 text-xs">
-          <Cpu className={`w-3.5 h-3.5 ${lmConnected ? 'text-emerald-400' : 'text-amber-400'}`} />
-          <div className="flex items-center gap-1.5 font-mono">
-            <span className="text-slate-400 hidden sm:inline">LM Studio:</span>
-            {lmConnected ? (
-              <span className="text-emerald-300 font-medium flex items-center gap-1">
-                {lmModelLoaded ? 'Qwen 3.5 (9B) Loaded' : 'Connected (Idle)'}
-                <CheckCircle2 className="w-3 h-3 text-emerald-400 inline" />
-              </span>
-            ) : (
-              <span className="text-amber-400 font-medium flex items-center gap-1">
-                Offline (Heuristic Fallback)
-                <AlertTriangle className="w-3 h-3" />
-              </span>
-            )}
-          </div>
-        </div>
+      {/* Status pills */}
+      <div className="flex items-center gap-2 ml-4">
+        {/* LM Studio */}
+        <StatusPill
+          label="Qwen"
+          ok={!!lmOk}
+          loading={loading}
+          tooltip={health?.lm_studio?.configured_model || 'Not loaded'}
+        />
+        {/* SERP */}
+        <StatusPill
+          label="SERP"
+          ok={!!serpOk}
+          loading={loading}
+          tooltip={health?.serp_provider?.provider || 'No API key'}
+        />
+        {/* Discord */}
+        {discordOk !== undefined && (
+          <StatusPill
+            label="Discord"
+            ok={!!discordOk}
+            loading={loading}
+            tooltip={discordOk ? 'Webhook active' : 'Not configured'}
+          />
+        )}
+      </div>
 
-        {/* SERP Provider status */}
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#141822] border border-white/10 text-xs">
-          <Globe className={`w-3.5 h-3.5 ${serpConfigured ? 'text-sky-400' : 'text-purple-400'}`} />
-          <div className="flex items-center gap-1.5 font-mono">
-            <span className="text-slate-400 hidden sm:inline">SERP:</span>
-            {serpConfigured ? (
-              <span className="text-sky-300 font-medium">SerpApi Active</span>
-            ) : (
-              <span className="text-purple-300 font-medium bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/20">
-                Mock Mode (Safe)
-              </span>
-            )}
+      {/* Right side */}
+      <div className="ml-auto flex items-center gap-3">
+        {/* System status */}
+        {health && (
+          <div
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-mono font-semibold"
+            style={{
+              background: systemOk ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)',
+              border: `1px solid ${systemOk ? 'rgba(16,185,129,0.25)' : 'rgba(245,158,11,0.25)'}`,
+              color: systemOk ? '#10b981' : '#f59e0b',
+            }}
+          >
+            {systemOk
+              ? <CheckCircle className="w-3 h-3" />
+              : <AlertTriangle className="w-3 h-3" />
+            }
+            {systemOk ? 'READY' : 'PARTIAL'}
           </div>
-        </div>
+        )}
 
-        {/* Refresh health button */}
+        {/* Refresh */}
         <button
           onClick={onRefresh}
           disabled={loading}
-          title="Refresh runtime health"
-          className="p-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 hover:text-white transition-all disabled:opacity-50"
+          className="p-1.5 rounded-lg transition-all duration-200 disabled:opacity-50"
+          style={{
+            background: 'rgba(255,255,255,0.04)',
+            border: '1px solid rgba(255,255,255,0.08)',
+            color: 'rgba(148,163,184,0.7)',
+          }}
+          onMouseEnter={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.color = '#63b3ed';
+            (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(99,179,237,0.3)';
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.color = 'rgba(148,163,184,0.7)';
+            (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(255,255,255,0.08)';
+          }}
+          title="Refresh system status"
         >
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-sky-400' : ''}`} />
+          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
         </button>
       </div>
     </header>
   );
 };
+
+const StatusPill: React.FC<{ label: string; ok: boolean; loading: boolean; tooltip: string }> = ({
+  label, ok, loading, tooltip
+}) => (
+  <div
+    title={tooltip}
+    className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-mono font-bold cursor-default"
+    style={{
+      background: loading
+        ? 'rgba(255,255,255,0.04)'
+        : ok ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.08)',
+      border: `1px solid ${loading ? 'rgba(255,255,255,0.06)' : ok ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'}`,
+      color: loading ? 'rgba(148,163,184,0.5)' : ok ? '#10b981' : '#ef4444',
+    }}
+  >
+    <span
+      className={`w-1.5 h-1.5 rounded-full ${loading ? 'shimmer' : ok ? 'animate-pulse-glow' : ''}`}
+      style={{
+        background: loading ? 'rgba(255,255,255,0.2)' : ok ? '#10b981' : '#ef4444',
+        boxShadow: !loading && ok ? '0 0 6px #10b981' : undefined,
+      }}
+    />
+    {label}
+  </div>
+);

@@ -14,11 +14,11 @@ logging.basicConfig(
     level=getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO),
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 )
-logger = logging.getLogger("searchlens")
+logger = logging.getLogger("dorker")
 
 app = FastAPI(
-    title="SearchLens AI — Google Search Operator Workbench",
-    description="AI-assisted research dashboard converting natural language into advanced Google search queries",
+    title="Dorker — Think. Dork. Discover.",
+    description="An AI-powered Google search operator generator and public-source research dashboard.",
     version="1.0.0"
 )
 

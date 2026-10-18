@@ -133,7 +133,7 @@ class PreviewService:
             async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
                 while redirect_count <= settings.PREVIEW_MAX_REDIRECTS:
                     headers = {
-                        "User-Agent": "SearchLensAI-PreviewBot/1.0 (+https://github.com/dorker/searchlens)",
+                        "User-Agent": "Dorker-PreviewBot/1.0 (+https://github.com/dorker)",
                         "Accept": "text/html,text/plain"
                     }
                     resp = await client.get(current_url, headers=headers)

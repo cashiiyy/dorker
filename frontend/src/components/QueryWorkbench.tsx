@@ -1,31 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
-  Sparkles,
-  Search,
-  Globe,
-  FileCode,
-  ShieldAlert,
-  Database,
-  FileText,
-  Copy,
-  Check,
-  Bookmark,
-  Layers,
-  AlertCircle,
-  Tag,
-  Calendar,
-  X,
-  Plus
+  Crosshair, Search, Globe, FileCode, ShieldAlert, Database,
+  FileText, Copy, Check, Bookmark, Layers, AlertCircle, X, Plus,
+  ChevronRight, Zap, Terminal, Send, CheckCircle, RefreshCw,
+  Target, Code2, BookOpen, Brain
 } from 'lucide-react';
 import {
-  ResearchCategory,
-  GeneratedQuery,
-  GenerateQueriesResponse,
-  SearchResultItem,
-  SearchResponse,
-  ResearchSession
+  ResearchCategory, GeneratedQuery, GenerateQueriesResponse,
+  SearchResultItem, SearchResponse, ResearchSession
 } from '../types';
-import { generateQueries, executeSearch, saveSession } from '../api';
+import { generateQueries, executeSearch, saveSession, getDiscordStatus, sendDiscordReport } from '../api';
 import { QueryCard } from './QueryCard';
 import { ResultsWorkspace } from './ResultsWorkspace';
 
@@ -35,16 +19,19 @@ interface QueryWorkbenchProps {
   initialSession?: ResearchSession | null;
 }
 
-const CATEGORY_PRESETS: { id: ResearchCategory; label: string; icon: any; desc: string }[] = [
-  { id: 'public_documentation', label: 'Public Documentation', icon: FileText, desc: 'API docs, manuals, architecture specs' },
-  { id: 'security_advisories', label: 'Security Advisories & CVEs', icon: ShieldAlert, desc: 'Vendor bulletins, CVE disclosures, patches' },
-  { id: 'code_repositories', label: 'Code & Repositories', icon: FileCode, desc: 'GitHub/GitLab repos, trees, and blobs' },
-  { id: 'datasets_papers', label: 'Datasets & Papers', icon: Database, desc: 'arXiv, HuggingFace, Kaggle, OpenData' },
-  { id: 'domain_exposure_audit', label: 'Authorized Domain Audit', icon: Globe, desc: 'Exposed subdomains, test routes, staging' },
-  { id: 'pdf_technical_docs', label: 'Technical PDF Extraction', icon: FileText, desc: 'Whitepapers, standards, schematics' },
-  { id: 'indexing_diagnostics', label: 'Indexing Diagnostics', icon: Layers, desc: 'Subdomain hygiene, index hygiene, 404s' },
-  { id: 'academic_osint', label: 'Lawful Academic OSINT', icon: Search, desc: 'Government, university, open research' },
+const CATEGORIES: { id: ResearchCategory; label: string; icon: any; desc: string; accent: string }[] = [
+  { id: 'public_documentation',  label: 'Public Docs',       icon: FileText,   desc: 'API specs, whitepapers',         accent: '#63b3ed' },
+  { id: 'security_advisories',   label: 'CVE / Advisories',  icon: ShieldAlert, desc: 'Vuln bulletins, patches',        accent: '#f59e0b' },
+  { id: 'code_repositories',     label: 'Code / Repos',      icon: FileCode,   desc: 'GitHub, GitLab blobs',            accent: '#10b981' },
+  { id: 'datasets_papers',       label: 'Datasets / Papers', icon: Database,   desc: 'arXiv, HuggingFace, Kaggle',      accent: '#a78bfa' },
+  { id: 'domain_exposure_audit', label: 'Domain Audit',      icon: Globe,      desc: 'Exposed paths, staging',          accent: '#f87171' },
+  { id: 'pdf_technical_docs',    label: 'PDF Extraction',    icon: BookOpen,   desc: 'Manuals, standards',              accent: '#fb923c' },
+  { id: 'indexing_diagnostics',  label: 'Index Diagnostics', icon: Layers,     desc: 'Subdomain hygiene',               accent: '#34d399' },
+  { id: 'academic_osint',        label: 'Academic OSINT',    icon: Search,     desc: 'Gov, edu, open research',         accent: '#818cf8' },
 ];
+
+const FILE_TYPES = ['pdf', 'doc', 'docx', 'xls', 'csv', 'json', 'xml', 'txt', 'pptx', 'sql'];
+const DATE_RANGES = ['Any time', 'Past 24h', 'Past week', 'Past month', 'Past year'];
 
 export const QueryWorkbench: React.FC<QueryWorkbenchProps> = ({
   onPreviewUrl,
@@ -63,7 +50,7 @@ export const QueryWorkbench: React.FC<QueryWorkbenchProps> = ({
   const [dateRange, setDateRange] = useState('Any time');
   const [authorizedConfirmed, setAuthorizedConfirmed] = useState(false);
 
-  // Generation state
+  // Generation
   const [generating, setGenerating] = useState(false);
   const [genResponse, setGenResponse] = useState<GenerateQueriesResponse | null>(
     initialSession ? {
@@ -78,412 +65,504 @@ export const QueryWorkbench: React.FC<QueryWorkbenchProps> = ({
   );
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // SERP Search state
+  // Search
+  const [activeQueryId, setActiveQueryId] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
   const [searchResponse, setSearchResponse] = useState<SearchResponse | null>(null);
-  const [allCopied, setAllCopied] = useState(false);
+
+  // Session
   const [savingSession, setSavingSession] = useState(false);
   const [sessionSavedMsg, setSessionSavedMsg] = useState(false);
+  const [savedSessionId, setSavedSessionId] = useState<string | null>(initialSession?.id || null);
 
-  // Add Domain Tag
+  // Discord
+  const [discordConfigured, setDiscordConfigured] = useState(false);
+
+  useEffect(() => {
+    getDiscordStatus().then((s) => setDiscordConfigured(s.configured && s.enabled)).catch(() => {});
+  }, []);
+
   const handleAddDomain = () => {
     if (!domainInput.trim()) return;
     const clean = domainInput.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
-    if (!targetDomains.includes(clean)) {
-      setTargetDomains([...targetDomains, clean]);
-    }
+    if (clean && !targetDomains.includes(clean)) setTargetDomains([...targetDomains, clean]);
     setDomainInput('');
   };
 
-  // Add Keyword Tag
   const handleAddKeyword = () => {
-    if (!keywordInput.trim()) return;
-    if (!keywords.includes(keywordInput.trim())) {
-      setKeywords([...keywords, keywordInput.trim()]);
-    }
+    const kw = keywordInput.trim();
+    if (kw && !keywords.includes(kw)) setKeywords([...keywords, kw]);
     setKeywordInput('');
   };
 
   const toggleFileType = (ft: string) => {
-    if (selectedFileTypes.includes(ft)) {
-      setSelectedFileTypes(selectedFileTypes.filter((f) => f !== ft));
-    } else {
-      setSelectedFileTypes([...selectedFileTypes, ft]);
-    }
+    setSelectedFileTypes(prev =>
+      prev.includes(ft) ? prev.filter(f => f !== ft) : [...prev, ft]
+    );
   };
 
-  // Handle Generate
   const handleGenerate = async () => {
-    if (!objective.trim()) {
-      setErrorMsg('Please specify a research objective.');
-      return;
-    }
+    if (!objective.trim()) { setErrorMsg('Enter a research objective.'); return; }
     if (category === 'domain_exposure_audit' && targetDomains.length === 0) {
-      setErrorMsg('Authorized Domain Exposure Audit requires at least one target domain.');
-      return;
+      setErrorMsg('Domain Audit requires at least one target domain.'); return;
     }
-
     try {
-      setGenerating(true);
-      setErrorMsg(null);
-      setSearchResponse(null);
+      setGenerating(true); setErrorMsg(null); setSearchResponse(null); setGenResponse(null);
       const res = await generateQueries({
-        objective: objective.trim(),
-        category,
-        target_domains: targetDomains,
-        keywords,
-        file_types: selectedFileTypes,
+        objective: objective.trim(), category,
+        target_domains: targetDomains.length > 0 ? targetDomains : undefined,
+        keywords: keywords.length > 0 ? keywords : undefined,
+        file_types: selectedFileTypes.length > 0 ? selectedFileTypes : undefined,
         date_range: dateRange !== 'Any time' ? dateRange : undefined,
         authorized_domain_confirmed: authorizedConfirmed,
       });
       setGenResponse(res);
-    } catch (err: any) {
-      setErrorMsg(err.message || 'Failed to generate queries');
-    } finally {
-      setGenerating(false);
-    }
+    } catch (e: any) {
+      setErrorMsg(e.message || 'Generation failed. Is LM Studio running?');
+    } finally { setGenerating(false); }
   };
 
-  // Handle Search
-  const handleExecuteSearch = async (queryStr: string) => {
+  const handleSearch = async (query: string, queryId: string) => {
     try {
-      setSearching(true);
-      const res = await executeSearch({ query: queryStr, num_results: 10 });
+      setActiveQueryId(queryId); setSearching(true); setSearchResponse(null);
+      const res = await executeSearch({ query, num_results: 10 });
       setSearchResponse(res);
-    } catch (err: any) {
-      alert(`Search execution failed: ${err.message}`);
-    } finally {
-      setSearching(false);
-    }
+    } catch (e: any) {
+      setSearchResponse({ query, total_results: 0, provider: 'error', is_mock: false, results: [], error: e.message });
+    } finally { setSearching(false); }
   };
 
-  // Update a single query card in-place
-  const handleUpdateQuery = (id: string, newQuery: string) => {
-    if (!genResponse) return;
-    const updated = genResponse.queries.map((q) => (q.id === id ? { ...q, query: newQuery } : q));
-    setGenResponse({ ...genResponse, queries: updated });
-  };
-
-  // Copy All Queries
-  const handleCopyAll = () => {
-    if (!genResponse) return;
-    const text = genResponse.queries.map((q) => `# ${q.label}\n${q.query}\n`).join('\n');
-    navigator.clipboard.writeText(text);
-    setAllCopied(true);
-    setTimeout(() => setAllCopied(false), 2000);
-  };
-
-  // Save Session
   const handleSaveSession = async () => {
     if (!genResponse) return;
     try {
       setSavingSession(true);
-      await saveSession({
-        title: genResponse.research_title || `Research: ${objective.slice(0, 30)}`,
-        objective: objective.trim(),
-        category,
+      const saved = await saveSession({
+        title: genResponse.research_title || `DORKER: ${objective.slice(0, 40)}`,
+        objective: objective.trim(), category,
         queries: genResponse.queries,
         results: searchResponse?.results || [],
-        notes: `Executed via SearchLens AI (${genResponse.model_used})`,
+        notes: `Generated via DORKER AI (${genResponse.model_used})`,
       });
-      setSessionSavedMsg(true);
+      setSavedSessionId(saved.id); setSessionSavedMsg(true);
       setTimeout(() => setSessionSavedMsg(false), 3000);
       if (onSessionSaved) onSessionSaved();
-    } catch (err: any) {
-      alert(`Save failed: ${err.message}`);
-    } finally {
-      setSavingSession(false);
-    }
+      getDiscordStatus().then((s) => setDiscordConfigured(s.configured && s.enabled)).catch(() => {});
+    } catch (e: any) {
+      alert(`Save failed: ${e.message}`);
+    } finally { setSavingSession(false); }
   };
 
+  const catObj = CATEGORIES.find(c => c.id === category);
+
   return (
-    <div className="space-y-8 max-w-5xl">
-      {/* Central Research Input Box */}
-      <section className="glass-panel rounded-2xl p-6 sm:p-8 border border-white/10 shadow-2xl space-y-6">
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider font-mono flex items-center gap-2">
-              <Sparkles className="w-3.5 h-3.5 text-sky-400" />
-              Natural Language Research Objective
-            </label>
-            <span className="text-[11px] text-slate-400 font-mono">
-              Qwen 3.5 Local Synthesis
-            </span>
-          </div>
+    <div className="space-y-6 max-w-5xl animate-fade-up">
 
-          <textarea
-            value={objective}
-            onChange={(e) => setObjective(e.target.value)}
-            rows={3}
-            placeholder="e.g. Find public security hardening guidelines, CIS benchmarks, and RBAC best practices for Kubernetes clusters..."
-            className="w-full bg-[#0a0d13] border border-white/10 rounded-xl p-4 text-sm text-slate-100 placeholder:text-slate-400 focus:outline-none focus:border-sky-500/50 focus:ring-1 focus:ring-sky-500/30 transition-all leading-relaxed resize-none shadow-inner"
-          />
+      {/* ─── Objective Input ─── */}
+      <div
+        className="rounded-2xl p-6 relative overflow-hidden"
+        style={{
+          background: 'rgba(11,17,32,0.8)',
+          border: '1px solid rgba(99,179,237,0.15)',
+          backdropFilter: 'blur(20px)',
+          boxShadow: '0 4px 40px rgba(0,0,0,0.4), 0 0 60px rgba(99,179,237,0.04)',
+        }}
+      >
+        {/* Decorative top gradient */}
+        <div
+          className="absolute top-0 left-0 right-0 h-px"
+          style={{ background: 'linear-gradient(90deg, transparent, rgba(99,179,237,0.5), rgba(167,139,250,0.5), transparent)' }}
+        />
+
+        <div className="flex items-center gap-2 mb-4">
+          <Brain className="w-4 h-4" style={{ color: '#63b3ed' }} />
+          <span className="text-xs font-bold tracking-widest uppercase" style={{ color: '#63b3ed', fontFamily: 'JetBrains Mono, monospace' }}>
+            Research Objective
+          </span>
         </div>
 
-        {/* Preset Category Pills */}
-        <div>
-          <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider font-mono block mb-2.5">
-            Research Preset & Operator Strategy
-          </label>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {CATEGORY_PRESETS.map((preset) => {
-              const Icon = preset.icon;
-              const selected = category === preset.id;
-              return (
-                <button
-                  key={preset.id}
-                  type="button"
-                  onClick={() => setCategory(preset.id)}
-                  className={`text-left p-3 rounded-xl border transition-all ${
-                    selected
-                      ? 'bg-sky-500/15 border-sky-400/40 text-sky-200 shadow-sm'
-                      : 'bg-white/5 border-white/5 text-slate-400 hover:text-slate-200 hover:bg-white/10'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 mb-1">
-                    <Icon className={`w-3.5 h-3.5 ${selected ? 'text-sky-400' : 'text-slate-400'}`} />
-                    <span className="text-xs font-semibold">{preset.label}</span>
-                  </div>
-                  <p className="text-[10px] text-slate-400 line-clamp-1">{preset.desc}</p>
+        <textarea
+          value={objective}
+          onChange={(e) => setObjective(e.target.value)}
+          placeholder="Describe what you want to research… e.g. 'Find all publicly exposed API documentation for authentication services'"
+          rows={3}
+          className="w-full rounded-xl px-4 py-3 text-sm resize-none"
+          style={{
+            background: 'rgba(0,0,0,0.4)',
+            border: '1px solid rgba(255,255,255,0.08)',
+            color: '#f0f6ff',
+            fontFamily: "'Space Grotesk', sans-serif",
+            lineHeight: '1.7',
+            transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
+          }}
+          onFocus={(e) => {
+            e.target.style.borderColor = 'rgba(99,179,237,0.4)';
+            e.target.style.boxShadow = '0 0 0 3px rgba(99,179,237,0.08)';
+          }}
+          onBlur={(e) => {
+            e.target.style.borderColor = 'rgba(255,255,255,0.08)';
+            e.target.style.boxShadow = 'none';
+          }}
+          onKeyDown={(e) => e.key === 'Enter' && e.ctrlKey && handleGenerate()}
+        />
+
+        {/* Character counter */}
+        <div className="flex items-center justify-between mt-2">
+          <span className="text-[11px]" style={{ color: 'rgba(148,163,184,0.4)', fontFamily: 'JetBrains Mono, monospace' }}>
+            Ctrl+Enter to generate
+          </span>
+          <span className="text-[11px]" style={{ color: 'rgba(148,163,184,0.4)', fontFamily: 'JetBrains Mono, monospace' }}>
+            {objective.length} chars
+          </span>
+        </div>
+      </div>
+
+      {/* ─── Category Selector ─── */}
+      <div>
+        <div className="flex items-center gap-2 mb-3">
+          <Target className="w-3.5 h-3.5" style={{ color: '#a78bfa' }} />
+          <span className="text-[10px] font-bold tracking-widest uppercase" style={{ color: 'rgba(167,139,250,0.8)', fontFamily: 'JetBrains Mono, monospace' }}>
+            Research Category
+          </span>
+        </div>
+        <div className="grid grid-cols-4 gap-2">
+          {CATEGORIES.map((cat, i) => {
+            const Icon = cat.icon;
+            const active = category === cat.id;
+            return (
+              <button
+                key={cat.id}
+                onClick={() => setCategory(cat.id)}
+                className={`p-3 rounded-xl text-left transition-all duration-300 group stagger-${Math.min(i+1,6)}`}
+                style={{
+                  background: active ? `${cat.accent}12` : 'rgba(11,17,32,0.6)',
+                  border: `1px solid ${active ? cat.accent + '40' : 'rgba(255,255,255,0.06)'}`,
+                  boxShadow: active ? `0 4px 20px ${cat.accent}15` : 'none',
+                  transform: active ? 'scale(1.02)' : 'scale(1)',
+                }}
+              >
+                <Icon className="w-3.5 h-3.5 mb-1.5" style={{ color: active ? cat.accent : 'rgba(148,163,184,0.5)' }} />
+                <div className="text-[11px] font-semibold" style={{ color: active ? '#f0f6ff' : 'rgba(148,163,184,0.7)', fontFamily: "'Space Grotesk', sans-serif" }}>
+                  {cat.label}
+                </div>
+                <div className="text-[10px] mt-0.5" style={{ color: 'rgba(100,116,139,0.7)', fontFamily: 'JetBrains Mono, monospace' }}>
+                  {cat.desc}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ─── Advanced Options Row ─── */}
+      <div className="grid grid-cols-3 gap-4">
+        {/* Target Domains */}
+        <div
+          className="rounded-xl p-4"
+          style={{ background: 'rgba(11,17,32,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}
+        >
+          <div className="text-[10px] font-bold tracking-widest uppercase mb-3" style={{ color: 'rgba(99,179,237,0.6)', fontFamily: 'JetBrains Mono, monospace' }}>
+            Target Domains
+          </div>
+          <div className="flex gap-1.5 mb-2">
+            <input
+              value={domainInput}
+              onChange={(e) => setDomainInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleAddDomain()}
+              placeholder="example.com"
+              className="flex-1 px-2.5 py-1.5 rounded-lg text-xs"
+              style={{
+                background: 'rgba(0,0,0,0.4)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                color: '#f0f6ff',
+                fontFamily: 'JetBrains Mono, monospace',
+              }}
+            />
+            <button
+              onClick={handleAddDomain}
+              className="px-2 py-1.5 rounded-lg transition-colors"
+              style={{ background: 'rgba(99,179,237,0.15)', border: '1px solid rgba(99,179,237,0.25)', color: '#63b3ed' }}
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {targetDomains.map((d) => (
+              <span key={d} className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono"
+                style={{ background: 'rgba(99,179,237,0.1)', border: '1px solid rgba(99,179,237,0.2)', color: '#7dd3fc' }}>
+                {d}
+                <button onClick={() => setTargetDomains(targetDomains.filter(x => x !== d))} className="hover:text-red-400">
+                  <X className="w-2.5 h-2.5" />
                 </button>
-              );
-            })}
+              </span>
+            ))}
+          </div>
+          {category === 'domain_exposure_audit' && targetDomains.length === 0 && (
+            <p className="text-[10px] mt-2" style={{ color: '#f59e0b' }}>⚠ Required for Domain Audit</p>
+          )}
+        </div>
+
+        {/* Keywords */}
+        <div
+          className="rounded-xl p-4"
+          style={{ background: 'rgba(11,17,32,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}
+        >
+          <div className="text-[10px] font-bold tracking-widest uppercase mb-3" style={{ color: 'rgba(167,139,250,0.6)', fontFamily: 'JetBrains Mono, monospace' }}>
+            Keywords
+          </div>
+          <div className="flex gap-1.5 mb-2">
+            <input
+              value={keywordInput}
+              onChange={(e) => setKeywordInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleAddKeyword()}
+              placeholder="Add keyword"
+              className="flex-1 px-2.5 py-1.5 rounded-lg text-xs"
+              style={{
+                background: 'rgba(0,0,0,0.4)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                color: '#f0f6ff',
+                fontFamily: 'JetBrains Mono, monospace',
+              }}
+            />
+            <button
+              onClick={handleAddKeyword}
+              className="px-2 py-1.5 rounded-lg"
+              style={{ background: 'rgba(167,139,250,0.15)', border: '1px solid rgba(167,139,250,0.25)', color: '#a78bfa' }}
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {keywords.map((kw) => (
+              <span key={kw} className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono"
+                style={{ background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.2)', color: '#c4b5fd' }}>
+                {kw}
+                <button onClick={() => setKeywords(keywords.filter(x => x !== kw))} className="hover:text-red-400">
+                  <X className="w-2.5 h-2.5" />
+                </button>
+              </span>
+            ))}
           </div>
         </div>
 
-        {/* Scope Controls: Target Domains, Keywords, File Types */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-white/5">
-          {/* Target Domains */}
-          <div>
-            <label className="text-[11px] font-mono text-slate-400 block mb-1.5">
-              Target Domains (site: constraint)
-            </label>
-            <div className="flex gap-2 mb-2">
-              <input
-                type="text"
-                value={domainInput}
-                onChange={(e) => setDomainInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddDomain())}
-                placeholder="e.g. kubernetes.io"
-                className="flex-1 bg-[#0a0d13] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder:text-slate-400 focus:outline-none focus:border-sky-500/40"
-              />
-              <button
-                type="button"
-                onClick={handleAddDomain}
-                className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 text-xs text-slate-200 font-medium border border-white/10 flex items-center gap-1"
-              >
-                <Plus className="w-3.5 h-3.5" /> Add
-              </button>
-            </div>
-            {targetDomains.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                {targetDomains.map((d) => (
-                  <span
-                    key={d}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-sky-500/15 border border-sky-500/30 text-sky-300 text-xs font-mono"
-                  >
-                    site:{d}
-                    <button
-                      onClick={() => setTargetDomains(targetDomains.filter((x) => x !== d))}
-                      className="hover:text-rose-400"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
+        {/* File Types + Date */}
+        <div
+          className="rounded-xl p-4"
+          style={{ background: 'rgba(11,17,32,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}
+        >
+          <div className="text-[10px] font-bold tracking-widest uppercase mb-3" style={{ color: 'rgba(16,185,129,0.6)', fontFamily: 'JetBrains Mono, monospace' }}>
+            File Types
           </div>
-
-          {/* Keywords */}
-          <div>
-            <label className="text-[11px] font-mono text-slate-400 block mb-1.5">
-              Focus Keywords
-            </label>
-            <div className="flex gap-2 mb-2">
-              <input
-                type="text"
-                value={keywordInput}
-                onChange={(e) => setKeywordInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddKeyword())}
-                placeholder="e.g. RBAC, admission controller"
-                className="flex-1 bg-[#0a0d13] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder:text-slate-400 focus:outline-none focus:border-sky-500/40"
-              />
-              <button
-                type="button"
-                onClick={handleAddKeyword}
-                className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 text-xs text-slate-200 font-medium border border-white/10 flex items-center gap-1"
-              >
-                <Plus className="w-3.5 h-3.5" /> Add
-              </button>
-            </div>
-            {keywords.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                {keywords.map((k) => (
-                  <span
-                    key={k}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white/10 border border-white/15 text-slate-300 text-xs"
-                  >
-                    {k}
-                    <button
-                      onClick={() => setKeywords(keywords.filter((x) => x !== k))}
-                      className="hover:text-rose-400"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* File types & Date range */}
-        <div className="flex flex-wrap items-center justify-between gap-4 pt-2 border-t border-white/5">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[11px] font-mono text-slate-400 mr-1">File Types:</span>
-            {['pdf', 'docx', 'txt', 'csv', 'json', 'log'].map((ft) => (
+          <div className="flex flex-wrap gap-1.5 mb-3">
+            {FILE_TYPES.map((ft) => (
               <button
                 key={ft}
-                type="button"
                 onClick={() => toggleFileType(ft)}
-                className={`text-[11px] font-mono px-2 py-0.5 rounded border transition-all ${
-                  selectedFileTypes.includes(ft)
-                    ? 'bg-sky-500/20 border-sky-400/40 text-sky-300'
-                    : 'bg-white/5 border-white/5 text-slate-400 hover:text-slate-200'
-                }`}
+                className="px-2 py-0.5 rounded text-[10px] font-mono font-bold transition-all duration-200"
+                style={{
+                  background: selectedFileTypes.includes(ft) ? 'rgba(16,185,129,0.2)' : 'rgba(255,255,255,0.04)',
+                  border: `1px solid ${selectedFileTypes.includes(ft) ? 'rgba(16,185,129,0.4)' : 'rgba(255,255,255,0.06)'}`,
+                  color: selectedFileTypes.includes(ft) ? '#34d399' : 'rgba(148,163,184,0.5)',
+                }}
               >
-                {ft.toUpperCase()}
+                .{ft}
               </button>
             ))}
           </div>
-
-          <div className="flex items-center gap-2">
-            <Calendar className="w-3.5 h-3.5 text-slate-400" />
-            <select
-              value={dateRange}
-              onChange={(e) => setDateRange(e.target.value)}
-              className="bg-[#0a0d13] border border-white/10 rounded-lg px-2.5 py-1 text-xs text-slate-300 focus:outline-none"
-            >
-              <option value="Any time">Any time</option>
-              <option value="Past 24 hours">Past 24 hours</option>
-              <option value="Past week">Past week</option>
-              <option value="Past month">Past month</option>
-              <option value="Past year">Past year</option>
-            </select>
+          <div className="text-[10px] font-bold tracking-widest uppercase mb-2" style={{ color: 'rgba(251,146,60,0.6)', fontFamily: 'JetBrains Mono, monospace' }}>
+            Date Range
           </div>
-        </div>
-
-        {/* Authorization checkbox for Domain Exposure Audits */}
-        {category === 'domain_exposure_audit' && (
-          <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-3">
-            <input
-              type="checkbox"
-              id="auth-check"
-              checked={authorizedConfirmed}
-              onChange={(e) => setAuthorizedConfirmed(e.target.checked)}
-              className="mt-1 rounded bg-[#0a0d13] border-amber-500/50 text-sky-500 focus:ring-0"
-            />
-            <label htmlFor="auth-check" className="text-xs text-amber-200 leading-relaxed cursor-pointer">
-              <strong>Owner Authorization Confirmation:</strong> I confirm that I own or hold explicit written authorization to assess public indexing exposure on the configured target domains.
-            </label>
-          </div>
-        )}
-
-        {/* Error Alert */}
-        {errorMsg && (
-          <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
-            <span>{errorMsg}</span>
-          </div>
-        )}
-
-        {/* Generate Button CTA */}
-        <div className="flex items-center justify-between pt-2">
-          <div className="text-[11px] text-slate-400 font-mono">
-            {targetDomains.length > 0 ? `Scoped to ${targetDomains.length} target(s)` : 'Scope: Open Web'}
-          </div>
-
-          <button
-            onClick={handleGenerate}
-            disabled={generating}
-            className="flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-semibold text-xs tracking-wide shadow-lg shadow-sky-500/20 transition-all transform hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:pointer-events-none"
+          <select
+            value={dateRange}
+            onChange={(e) => setDateRange(e.target.value)}
+            className="w-full px-2.5 py-1.5 rounded-lg text-[11px] font-mono"
+            style={{
+              background: 'rgba(0,0,0,0.5)',
+              border: '1px solid rgba(255,255,255,0.08)',
+              color: '#f0f6ff',
+              appearance: 'none',
+            }}
           >
-            <Sparkles className={`w-4 h-4 ${generating ? 'animate-spin' : ''}`} />
-            <span>{generating ? 'Formulating Operator Queries...' : 'Generate Google Queries'}</span>
-          </button>
+            {DATE_RANGES.map(r => <option key={r} value={r}>{r}</option>)}
+          </select>
         </div>
-      </section>
+      </div>
 
-      {/* Generated Queries Presentation */}
-      {genResponse && (
-        <section className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-white/10">
-            <div>
-              <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
-                <Layers className="w-4 h-4 text-sky-400" />
-                {genResponse.research_title || 'Generated Google Queries'}
-              </h3>
-              <p className="text-xs text-slate-400">
-                Model: <span className="font-mono text-sky-300">{genResponse.model_used}</span>
-              </p>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleCopyAll}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 hover:text-white transition-all"
-                title="Copy all queries to clipboard"
-              >
-                {allCopied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                <span>{allCopied ? 'All Copied' : 'Copy All'}</span>
-              </button>
-
-              <button
-                onClick={handleSaveSession}
-                disabled={savingSession}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/40 transition-all"
-                title="Save queries & findings to SQLite"
-              >
-                <Bookmark className="w-3.5 h-3.5" />
-                <span>{sessionSavedMsg ? 'Saved in DB!' : 'Save Session'}</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Queries Grid */}
-          <div className="grid grid-cols-1 gap-4">
-            {genResponse.queries.map((q) => (
-              <QueryCard
-                key={q.id}
-                query={q}
-                onSearch={handleExecuteSearch}
-                onUpdateQuery={handleUpdateQuery}
-              />
-            ))}
-          </div>
-
-          {/* Limitations Banner */}
-          {genResponse.limitations && genResponse.limitations.length > 0 && (
-            <div className="p-4 rounded-xl bg-white/5 border border-white/10 text-xs text-slate-400 space-y-1">
-              <div className="font-semibold text-slate-300">Methodology & Scope Limitations:</div>
-              <ul className="list-disc list-inside space-y-0.5 text-[11px]">
-                {genResponse.limitations.map((lim, i) => (
-                  <li key={i}>{lim}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </section>
+      {/* Domain Audit Authorization */}
+      {category === 'domain_exposure_audit' && (
+        <div
+          className="flex items-start gap-3 p-4 rounded-xl animate-fade-up"
+          style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.2)' }}
+        >
+          <input
+            type="checkbox"
+            id="authConfirm"
+            checked={authorizedConfirmed}
+            onChange={(e) => setAuthorizedConfirmed(e.target.checked)}
+            className="mt-0.5 accent-amber-500"
+          />
+          <label htmlFor="authConfirm" className="text-xs leading-relaxed cursor-pointer" style={{ color: '#fde68a' }}>
+            <span className="font-bold">⚠ Authorization Declaration</span><br />
+            I confirm I have explicit written authorization to conduct this exposure audit on the specified target domains. Unauthorized enumeration may violate CFAA/Computer Misuse Act.
+          </label>
+        </div>
       )}
 
-      {/* SERP Search Results Workspace */}
-      <ResultsWorkspace
-        searchResponse={searchResponse}
-        loading={searching}
-        onPreview={onPreviewUrl}
-        onClose={() => setSearchResponse(null)}
-      />
+      {/* ─── Error ─── */}
+      {errorMsg && (
+        <div className="flex items-center gap-2.5 p-3.5 rounded-xl animate-fade-up"
+          style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)' }}>
+          <AlertCircle className="w-4 h-4 shrink-0" style={{ color: '#f87171' }} />
+          <p className="text-xs" style={{ color: '#fca5a5', fontFamily: "'Space Grotesk', sans-serif" }}>{errorMsg}</p>
+          <button onClick={() => setErrorMsg(null)} className="ml-auto" style={{ color: '#94a3b8' }}>
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* ─── Generate Button ─── */}
+      <div className="flex items-center gap-3">
+        <button
+          onClick={handleGenerate}
+          disabled={generating || !objective.trim()}
+          className="glow-btn flex items-center gap-2.5 px-6 py-3 rounded-xl text-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed"
+          style={{
+            background: generating
+              ? 'rgba(99,179,237,0.1)'
+              : 'linear-gradient(135deg, rgba(99,179,237,0.25), rgba(167,139,250,0.25))',
+            border: '1px solid rgba(99,179,237,0.35)',
+            color: '#f0f6ff',
+            fontFamily: "'Space Grotesk', sans-serif",
+            boxShadow: '0 4px 20px rgba(99,179,237,0.1)',
+          }}
+        >
+          {generating ? (
+            <>
+              <RefreshCw className="w-4 h-4 animate-spin" style={{ color: '#63b3ed' }} />
+              <span>Generating Dork Queries…</span>
+            </>
+          ) : (
+            <>
+              <Zap className="w-4 h-4" style={{ color: '#63b3ed' }} />
+              <span>Generate Dork Queries</span>
+            </>
+          )}
+        </button>
+
+        {generating && (
+          <div className="flex items-center gap-2 text-xs" style={{ color: 'rgba(148,163,184,0.6)', fontFamily: 'JetBrains Mono, monospace' }}>
+            <Brain className="w-3.5 h-3.5 animate-pulse" style={{ color: '#a78bfa' }} />
+            Qwen 3.5 9B synthesizing operators…
+          </div>
+        )}
+      </div>
+
+      {/* ─── Generated Queries Panel ─── */}
+      {genResponse && (
+        <div className="space-y-4 animate-fade-up">
+          {/* Header */}
+          <div
+            className="rounded-2xl p-5 relative overflow-hidden"
+            style={{
+              background: 'rgba(11,17,32,0.85)',
+              border: '1px solid rgba(99,179,237,0.12)',
+            }}
+          >
+            <div
+              className="absolute top-0 left-0 right-0 h-px"
+              style={{ background: 'linear-gradient(90deg, transparent, rgba(99,179,237,0.4), transparent)' }}
+            />
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mb-3">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <Code2 className="w-4 h-4" style={{ color: '#63b3ed' }} />
+                  <h2 className="text-base font-bold" style={{ color: '#f0f6ff', fontFamily: "'Space Grotesk', sans-serif" }}>
+                    {genResponse.research_title}
+                  </h2>
+                </div>
+                <p className="text-xs" style={{ color: 'rgba(148,163,184,0.7)', fontFamily: "'Space Grotesk', sans-serif" }}>
+                  {genResponse.objective_summary}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="badge badge-pro">
+                  {genResponse.queries.length} queries
+                </span>
+                <span className="badge badge-violet">
+                  {genResponse.is_local ? 'Local AI' : 'Fallback'}
+                </span>
+              </div>
+            </div>
+
+            {/* Model info */}
+            <div className="flex items-center gap-1.5 text-[10px]" style={{ color: 'rgba(100,116,139,0.7)', fontFamily: 'JetBrains Mono, monospace' }}>
+              <Brain className="w-3 h-3" />
+              {genResponse.model_used}
+            </div>
+
+            {/* Session actions */}
+            {genResponse && (
+              <div className="flex items-center gap-2 mt-4 pt-3" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                <button
+                  onClick={handleSaveSession}
+                  disabled={savingSession}
+                  className="glow-btn flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold"
+                  style={{
+                    background: 'rgba(167,139,250,0.15)',
+                    border: '1px solid rgba(167,139,250,0.3)',
+                    color: '#c4b5fd',
+                  }}
+                >
+                  {savingSession ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Bookmark className="w-3.5 h-3.5" />}
+                  {sessionSavedMsg ? 'Saved!' : savingSession ? 'Saving…' : 'Save Session'}
+                </button>
+                {savedSessionId && (
+                  <span className="text-[10px] font-mono" style={{ color: 'rgba(100,116,139,0.6)' }}>
+                    ID: {savedSessionId.slice(0, 8)}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Limitations */}
+          {genResponse.limitations.length > 0 && (
+            <div className="flex items-start gap-2 px-4 py-2.5 rounded-xl text-[11px]"
+              style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.12)' }}>
+              <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: '#f59e0b' }} />
+              <div style={{ color: 'rgba(253,230,138,0.7)' }}>
+                {genResponse.limitations.join(' · ')}
+              </div>
+            </div>
+          )}
+
+          {/* Query Cards */}
+          <div className="space-y-3">
+            {genResponse.queries.map((q, i) => (
+              <div key={q.id} className={`animate-fade-up stagger-${Math.min(i+1,6)}`}>
+                <QueryCard
+                  query={q}
+                  isSearching={searching && activeQueryId === q.id}
+                  onSearch={(queryStr) => handleSearch(queryStr, q.id)}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ─── Results Workspace ─── */}
+      {(searchResponse || searching) && (
+        <div className="animate-fade-up">
+          <ResultsWorkspace
+            searchResponse={searchResponse}
+            loading={searching}
+            onPreview={onPreviewUrl}
+            onClose={() => setSearchResponse(null)}
+            sessionId={savedSessionId || undefined}
+            discordConfigured={discordConfigured}
+          />
+        </div>
+      )}
     </div>
   );
 };
